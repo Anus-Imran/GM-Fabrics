@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+backend/node_modules/
+gmfabrics/node_modules/
+
+# Next.js & Build outputs
+.next/
+gmfabrics/.next/
+out/
+build/
+dist/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+backend/.env
+gmfabrics/.env
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Vercel & IDE
+.vercel
+.idea/
+.vscode/
+*.swp
+.DS_Store

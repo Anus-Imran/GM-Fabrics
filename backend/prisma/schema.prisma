@@ -1,0 +1,278 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  CASHIER
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  CREDIT
+}
+
+enum SaleStatus {
+  PENDING
+  COMPLETED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+// 1. Users & Auth
+model User {
+  id        Int       @id @default(autoincrement())
+  name      String
+  email     String    @unique
+  password  String
+  role      Role      @default(CASHIER)
+  sales     Sale[]
+  expenses  Expense[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+// 2. Units (guzz, metre, kg, grams, pieces, etc.)
+model Unit {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  symbol    String?
+  products  Product[]
+  createdAt DateTime  @default(now())
+}
+
+// 3. Categories (Lawn, Cotton, Silk, Chiffon, Linen...)
+model Category {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  products  Product[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+// 4. Brands (Gul Ahmed, Bonanza, Al-Karam, Sapphire...)
+model Brand {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  country   String?
+  notes     String?
+  products  Product[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+// 5. Suppliers
+model Supplier {
+  id           Int          @id @default(autoincrement())
+  name         String
+  phone        String?
+  address      String?
+  city         String?
+  notes        String?
+  products     Product[]
+  stockEntries StockEntry[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+// 6. Products
+model Product {
+  id            Int          @id @default(autoincrement())
+  name          String
+  sku           String?      @unique
+  barcode       String?      @unique
+  description   String?
+
+  categoryId    Int
+  category      Category     @relation(fields: [categoryId], references: [id])
+  brandId       Int?
+  brand         Brand?       @relation(fields: [brandId], references: [id])
+  unitId        Int
+  unit          Unit         @relation(fields: [unitId], references: [id])
+
+  supplierId    Int?
+  supplier      Supplier?    @relation(fields: [supplierId], references: [id])
+
+  costPrice     Float        @default(0)
+  salePrice     Float        @default(0)
+
+  stockQuantity Float        @default(0)
+  lowStockAlert Float        @default(10)
+
+  isActive      Boolean      @default(true)
+
+  stockEntries  StockEntry[]
+  saleItems     SaleItem[]
+  returnItems   ReturnItem[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
+
+// 7. Stock Entries (Inventory Purchases & Price Change Tracking)
+model StockEntry {
+  id                  Int       @id @default(autoincrement())
+  productId           Int
+  product             Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  supplierId          Int?
+  supplier            Supplier? @relation(fields: [supplierId], references: [id])
+
+  quantity            Float
+  costPerUnit         Float
+  totalCost           Float
+
+  previousCostPerUnit Float?
+  priceDiff           Float?
+
+  notes               String?
+  purchasedAt         DateTime  @default(now())
+  createdAt           DateTime  @default(now())
+}
+
+// 8. Customers
+model Customer {
+  id                 Int      @id @default(autoincrement())
+  name               String
+  phone              String?  @unique
+  cnic               String?  @unique
+  address            String?
+  notes              String?
+  outstandingBalance Float    @default(0)
+  sales              Sale[]
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+// 9. Sales
+model Sale {
+  id             Int           @id @default(autoincrement())
+  saleNumber     String        @unique
+
+  customerId     Int?
+  customer       Customer?     @relation(fields: [customerId], references: [id])
+  userId         Int
+  user           User          @relation(fields: [userId], references: [id])
+
+  subtotal       Float
+  discountType   String?
+  discountValue  Float         @default(0)
+  discountAmount Float         @default(0)
+  totalAmount    Float
+
+  paymentMethod  PaymentMethod @default(CASH)
+  amountPaid     Float
+  changeAmount   Float         @default(0)
+
+  status         SaleStatus    @default(COMPLETED)
+  notes          String?
+
+  saleItems      SaleItem[]
+  receipt        Receipt?
+  returns        Return[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+// 10. Sale Items
+model SaleItem {
+  id          Int          @id @default(autoincrement())
+  saleId      Int
+  sale        Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId   Int
+  product     Product      @relation(fields: [productId], references: [id])
+
+  quantity    Float
+  unitPrice   Float
+  subtotal    Float
+
+  returnItems ReturnItem[]
+  createdAt   DateTime     @default(now())
+}
+
+// 11. Receipts
+model Receipt {
+  id          Int       @id @default(autoincrement())
+  saleId      Int       @unique
+  sale        Sale      @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  receiptHtml String?   @db.Text
+  printCount  Int       @default(0)
+  lastPrintAt DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+// 12. Expense Categories
+model ExpenseCategory {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  expenses  Expense[]
+  createdAt DateTime  @default(now())
+}
+
+// 13. Expenses
+model Expense {
+  id         Int             @id @default(autoincrement())
+  title      String
+  categoryId Int
+  category   ExpenseCategory @relation(fields: [categoryId], references: [id])
+  amount     Float
+  date       DateTime        @default(now())
+  notes      String?
+  userId     Int?
+  user       User?           @relation(fields: [userId], references: [id])
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+}
+
+// 14. Returns
+model Return {
+  id           Int           @id @default(autoincrement())
+  saleId       Int
+  sale         Sale          @relation(fields: [saleId], references: [id])
+  reason       String?
+  refundAmount Float
+  refundMethod PaymentMethod @default(CASH)
+  returnItems  ReturnItem[]
+  createdAt    DateTime      @default(now())
+}
+
+// 15. Return Items
+model ReturnItem {
+  id           Int      @id @default(autoincrement())
+  returnId     Int
+  return       Return   @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  saleItemId   Int
+  saleItem     SaleItem @relation(fields: [saleItemId], references: [id])
+  productId    Int
+  product      Product  @relation(fields: [productId], references: [id])
+
+  quantity     Float
+  refundAmount Float
+  createdAt    DateTime @default(now())
+}
+
+// 16. System Notifications
+model Notification {
+  id        Int      @id @default(autoincrement())
+  type      String
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  metadata  Json?
+  createdAt DateTime @default(now())
+}
+
+// 17. AI Action Audit Logs
+model AiLog {
+  id         Int      @id @default(autoincrement())
+  agent      String
+  input      String?  @db.Text
+  output     String?  @db.Text
+  tokensUsed Int?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+}

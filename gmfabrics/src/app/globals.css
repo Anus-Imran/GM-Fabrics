@@ -1,0 +1,38 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+* {
+  font-family: 'Poppins', sans-serif !important;
+}
+
+*:focus, *:focus-visible, *:focus-within {
+  outline: none !important;
+  box-shadow: none !important;
+  ring: 0 !important;
+}
+
+button, a, select, input[type="checkbox"], input[type="radio"], [role="button"], .cursor-pointer {
+  cursor: pointer !important;
+}
+
+html, body {
+  font-family: 'Poppins', sans-serif;
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  min-height: 100%;
+}
+
+html.dark body {
+  background-color: #09090b !important;
+  color: #f8fafc !important;
+}

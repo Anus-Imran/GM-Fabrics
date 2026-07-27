@@ -4,23 +4,25 @@ const getApiUrl = () => {
   if (process.env.NEXT_PUBLIC_API_URL) {
     return process.env.NEXT_PUBLIC_API_URL;
   }
-  if (typeof window !== "undefined" && !window.location.hostname.includes("localhost")) {
+  if (
+    typeof window !== "undefined" &&
+    !window.location.hostname.includes("localhost") &&
+    !window.location.hostname.includes("127.0.0.1")
+  ) {
     return "https://gm-fabrics-server.vercel.app/api";
   }
   return "http://localhost:5000/api";
 };
 
-const API_URL = getApiUrl();
-
 const api = axios.create({
-  baseURL: API_URL,
   headers: {
     "Content-Type": "application/json",
   },
 });
 
-// Interceptor to attach Authorization Bearer token from localStorage
+// Dynamic Base URL & Token Interceptor
 api.interceptors.request.use((config) => {
+  config.baseURL = getApiUrl();
   if (typeof window !== "undefined") {
     const token = localStorage.getItem("gmfabrics_token");
     if (token) {
@@ -30,7 +32,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Interceptor to handle unauthenticated 401 response
+// Unauthenticated 401 Interceptor
 api.interceptors.response.use(
   (response) => response.data,
   (error) => {

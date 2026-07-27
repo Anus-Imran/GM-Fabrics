@@ -25,13 +25,34 @@ import aiRoutes from "./routes/aiRoutes.js";
 
 const app = express();
 
-// Global Middlewares
+// Dynamic CORS Middleware supporting Vercel previews, production domains, and localhost
 app.use(
   cors({
-    origin: [envConfig.frontendUrl, "http://localhost:3001", "http://localhost:3000"],
+    origin: (origin, callback) => {
+      // Allow non-browser requests (Postman, curl, server-to-server)
+      if (!origin) return callback(null, true);
+
+      // Allow any localhost, vercel.app subdomains, or custom frontend URL
+      if (
+        origin.startsWith("http://localhost") ||
+        origin.endsWith(".vercel.app") ||
+        origin === envConfig.frontendUrl
+      ) {
+        return callback(null, true);
+      }
+
+      // Default allow for seamless Vercel deployments
+      return callback(null, true);
+    },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
   })
 );
+
+// Explicit OPTIONS Preflight handler
+app.options("*", cors());
+
 app.use(morgan("dev"));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));

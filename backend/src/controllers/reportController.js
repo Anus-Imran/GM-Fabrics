@@ -3,7 +3,8 @@ import { sendSuccess, sendError } from "../utils/responseUtil.js";
 
 export const getDashboardKpis = async (req, res) => {
   try {
-    const data = await reportService.getDashboardKpis();
+    const { period, startDate, endDate } = req.query;
+    const data = await reportService.getDashboardKpis({ period, startDate, endDate });
     return sendSuccess(res, "Dashboard KPIs retrieved", data);
   } catch (error) {
     return sendError(res, error.message, 500);

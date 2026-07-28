@@ -27,11 +27,25 @@ export const createReturn = async (data) => {
       const saleItem = sale.saleItems.find((si) => si.id === saleItemId);
       if (!saleItem) throw new Error(`Sale item ID ${saleItemId} not found in this sale`);
 
-      if (returnQty <= 0 || returnQty > saleItem.quantity) {
-        throw new Error(`Invalid return quantity for item ID ${saleItemId}`);
+      // Fetch previous return items to calculate already returned quantity
+      const previousReturns = await tx.returnItem.findMany({
+        where: { saleItemId: saleItem.id },
+      });
+      const alreadyReturnedQty = previousReturns.reduce((sum, ri) => sum + ri.quantity, 0);
+      const remainingReturnable = saleItem.quantity - alreadyReturnedQty;
+
+      if (remainingReturnable <= 0) {
+        throw new Error(`This sale item has already been fully returned.`);
       }
 
-      const itemRefundAmount = returnQty * saleItem.unitPrice;
+      if (returnQty <= 0 || returnQty > remainingReturnable) {
+        throw new Error(
+          `Cannot return ${returnQty} units. Maximum remaining returnable quantity for this item is ${remainingReturnable}`
+        );
+      }
+
+      // Round refund price to integer PKR
+      const itemRefundAmount = Math.round(returnQty * saleItem.unitPrice);
       totalRefund += itemRefundAmount;
 
       preparedReturnItems.push({
@@ -47,7 +61,7 @@ export const createReturn = async (data) => {
       data: {
         saleId: sId,
         reason: reason || null,
-        refundAmount: totalRefund,
+        refundAmount: Math.round(totalRefund),
         refundMethod: refundMethod || sale.paymentMethod,
       },
     });

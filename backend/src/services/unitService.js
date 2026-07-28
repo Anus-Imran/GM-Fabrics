@@ -11,17 +11,27 @@ export const getAllUnits = async () => {
   });
 };
 
-export const createUnit = async ({ name, symbol }) => {
+export const createUnit = async ({ name, symbol, allowDecimal }) => {
   const existing = await prisma.unit.findUnique({ where: { name } });
   if (existing) throw new Error("Unit with this name already exists");
-  return prisma.unit.create({ data: { name, symbol } });
+  return prisma.unit.create({
+    data: {
+      name,
+      symbol,
+      allowDecimal: allowDecimal !== undefined ? Boolean(allowDecimal) : true,
+    },
+  });
 };
 
-export const updateUnit = async (id, { name, symbol }) => {
+export const updateUnit = async (id, { name, symbol, allowDecimal }) => {
   const unitId = parseInt(id, 10);
+  const data = { name, symbol };
+  if (allowDecimal !== undefined) {
+    data.allowDecimal = Boolean(allowDecimal);
+  }
   return prisma.unit.update({
     where: { id: unitId },
-    data: { name, symbol },
+    data,
   });
 };
 

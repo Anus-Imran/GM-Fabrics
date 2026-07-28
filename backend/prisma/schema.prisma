@@ -39,11 +39,12 @@ model User {
 
 // 2. Units (guzz, metre, kg, grams, pieces, etc.)
 model Unit {
-  id        Int       @id @default(autoincrement())
-  name      String    @unique
-  symbol    String?
-  products  Product[]
-  createdAt DateTime  @default(now())
+  id           Int       @id @default(autoincrement())
+  name         String    @unique
+  symbol       String?
+  allowDecimal Boolean   @default(true)
+  products     Product[]
+  createdAt    DateTime  @default(now())
 }
 
 // 3. Categories (Lawn, Cotton, Silk, Chiffon, Linen...)

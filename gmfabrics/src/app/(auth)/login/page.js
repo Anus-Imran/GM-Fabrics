@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "../../../context/authContext.jsx";
 import { Input } from "../../../components/common/input.jsx";
 import { Button } from "../../../components/common/button.jsx";
+import { showToastSuccess, showToastError } from "../../../utils/alerts.js";
 import { Lock } from "lucide-react";
 
 export default function LoginPage() {
@@ -21,10 +22,13 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await login(email, password);
+      const resUser = await login(email, password);
+      showToastSuccess(`Welcome back, ${resUser?.name || "User"}!`);
       router.push("/dashboard");
     } catch (err) {
-      setError(err.message || "Invalid credentials.");
+      const msg = err.message || "Invalid login credentials.";
+      setError(msg);
+      showToastError(msg);
     } finally {
       setLoading(false);
     }

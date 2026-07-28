@@ -10,6 +10,7 @@ import { Modal } from "../../../components/common/modal.jsx";
 import { Plus, Search } from "lucide-react";
 import { formatCurrency } from "../../../utils/formatCurrency.js";
 import { formatDateTime } from "../../../utils/formatDate.js";
+import { showToastSuccess, showToastError, confirmDelete } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
 
 export default function ProductsPage() {
@@ -54,21 +55,29 @@ export default function ProductsPage() {
   };
 
   const handleCreateOrUpdate = async (formData) => {
-    if (editingProduct) {
-      await api.put(`/products/${editingProduct.id}`, formData);
-    } else {
-      await api.post("/products", formData);
+    try {
+      if (editingProduct) {
+        await api.put(`/products/${editingProduct.id}`, formData);
+        showToastSuccess("Product updated successfully!");
+      } else {
+        await api.post("/products", formData);
+        showToastSuccess("New product added to catalog!");
+      }
+      fetchData();
+    } catch (err) {
+      showToastError(err.message || "Failed to save product.");
     }
-    fetchData();
   };
 
   const handleDelete = async (id) => {
-    if (confirm("Are you sure you want to deactivate this fabric product?")) {
+    const isConfirmed = await confirmDelete("Deactivate Product?", "Are you sure you want to deactivate this fabric product?");
+    if (isConfirmed) {
       try {
         await api.delete(`/products/${id}`);
+        showToastSuccess("Product deactivated successfully.");
         fetchData();
       } catch (err) {
-        alert(err.message);
+        showToastError(err.message || "Failed to delete product.");
       }
     }
   };

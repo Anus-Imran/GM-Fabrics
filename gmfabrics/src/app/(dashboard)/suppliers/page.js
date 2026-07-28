@@ -7,6 +7,7 @@ import { Button } from "../../../components/common/button.jsx";
 import { Modal } from "../../../components/common/modal.jsx";
 import { Input } from "../../../components/common/input.jsx";
 import { Plus, Edit2, Trash2, Truck } from "lucide-react";
+import { showToastSuccess, showToastError, confirmDelete } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
 
 export default function SuppliersPage() {
@@ -58,23 +59,28 @@ export default function SuppliersPage() {
     try {
       if (editingSupplier) {
         await api.put(`/suppliers/${editingSupplier.id}`, formData);
+        showToastSuccess("Supplier profile updated successfully!");
       } else {
         await api.post("/suppliers", formData);
+        showToastSuccess("New supplier added!");
       }
       setShowModal(false);
       fetchSuppliers();
     } catch (err) {
       setError(err.message);
+      showToastError(err.message);
     }
   };
 
   const handleDelete = async (id) => {
-    if (confirm("Delete supplier profile?")) {
+    const isConfirmed = await confirmDelete("Delete Supplier?", "Are you sure you want to delete this supplier profile?");
+    if (isConfirmed) {
       try {
         await api.delete(`/suppliers/${id}`);
+        showToastSuccess("Supplier deleted successfully.");
         fetchSuppliers();
       } catch (err) {
-        alert(err.message);
+        showToastError(err.message || "Failed to delete supplier.");
       }
     }
   };

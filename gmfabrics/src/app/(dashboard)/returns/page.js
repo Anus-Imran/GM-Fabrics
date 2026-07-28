@@ -10,6 +10,7 @@ import { Badge } from "../../../components/common/badge.jsx";
 import { RotateCcw, Search } from "lucide-react";
 import { formatCurrency } from "../../../utils/formatCurrency.js";
 import { formatDateTime } from "../../../utils/formatDate.js";
+import { showToastSuccess, showToastError, confirmAction } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
 
 export default function ReturnsPage() {
@@ -86,6 +87,13 @@ export default function ReturnsPage() {
       return;
     }
 
+    const isConfirmed = await confirmAction(
+      "Confirm Return & Restock?",
+      `Process return for ${returnItems.length} item(s) and restock inventory?`,
+      "Yes, Process Return"
+    );
+    if (!isConfirmed) return;
+
     setSubmitting(true);
     try {
       await api.post("/returns", {
@@ -95,12 +103,14 @@ export default function ReturnsPage() {
         refundMethod: targetSale.paymentMethod,
       });
 
+      showToastSuccess("Return processed successfully & stock inventory restocked!");
       setShowModal(false);
       setTargetSale(null);
       setSelectedSaleNumber("");
       fetchSales();
     } catch (err) {
       setError(err.message || "Failed to process return.");
+      showToastError(err.message || "Failed to process return.");
     } finally {
       setSubmitting(false);
     }
@@ -205,7 +215,7 @@ export default function ReturnsPage() {
                       <span className="text-[10px] text-zinc-400">Return Qty:</span>
                       <input
                         type="number"
-                        step="0.01"
+                        step={si.product.unit?.allowDecimal !== false ? "0.01" : "1"}
                         min="0"
                         max={si.quantity}
                         value={returnQtyMap[si.id] || 0}

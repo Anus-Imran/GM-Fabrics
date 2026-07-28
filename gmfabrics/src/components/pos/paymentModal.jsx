@@ -5,6 +5,7 @@ import { Modal } from "../common/modal.jsx";
 import { Button } from "../common/button.jsx";
 import { useCart } from "../../context/cartContext.jsx";
 import { formatCurrency } from "../../utils/formatCurrency.js";
+import { showToastSuccess, showToastError } from "../../utils/alerts.js";
 import api from "../../services/apiService.js";
 import { Banknote, CreditCard, BookOpen } from "lucide-react";
 
@@ -58,12 +59,14 @@ export const PaymentModal = ({ isOpen, onClose, onSaleSuccess }) => {
 
       const res = await api.post("/sales", payload);
       if (res.data) {
+        showToastSuccess("POS Sale completed & receipt generated!");
         clearCart();
         onClose();
         if (onSaleSuccess) onSaleSuccess(res.data);
       }
     } catch (err) {
       setError(err.message || "Failed to process sale.");
+      showToastError(err.message || "Failed to process sale.");
     } finally {
       setSubmitting(false);
     }

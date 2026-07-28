@@ -7,6 +7,7 @@ import { ExpenseModal } from "../../../components/expenses/expenseModal.jsx";
 import { Card } from "../../../components/common/card.jsx";
 import { Button } from "../../../components/common/button.jsx";
 import { Plus } from "lucide-react";
+import { showToastSuccess, showToastError, confirmDelete } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
 
 export default function ExpensesPage() {
@@ -36,17 +37,24 @@ export default function ExpensesPage() {
   };
 
   const handleCreateExpense = async (formData) => {
-    await api.post("/expenses", formData);
-    fetchData();
+    try {
+      await api.post("/expenses", formData);
+      showToastSuccess("Expense entry recorded!");
+      fetchData();
+    } catch (err) {
+      showToastError(err.message || "Failed to record expense.");
+    }
   };
 
   const handleDeleteExpense = async (id) => {
-    if (confirm("Delete this expense entry?")) {
+    const isConfirmed = await confirmDelete("Delete Expense?", "Are you sure you want to delete this expense entry?");
+    if (isConfirmed) {
       try {
         await api.delete(`/expenses/${id}`);
+        showToastSuccess("Expense deleted successfully.");
         fetchData();
       } catch (err) {
-        alert(err.message);
+        showToastError(err.message || "Failed to delete expense.");
       }
     }
   };

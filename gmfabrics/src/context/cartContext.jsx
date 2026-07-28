@@ -14,25 +14,33 @@ export const CartProvider = ({ children }) => {
   const [notes, setNotes] = useState("");
 
   const addToCart = (product, quantity = 1) => {
+    const isDecimalAllowed = product.unit?.allowDecimal !== false;
+    const initialQty = isDecimalAllowed ? parseFloat(quantity) : Math.round(parseFloat(quantity));
+
     setItems((prevItems) => {
       const existingIndex = prevItems.findIndex((item) => item.product.id === product.id);
       if (existingIndex > -1) {
         const updated = [...prevItems];
-        const newQty = updated[existingIndex].quantity + quantity;
+        let newQty = updated[existingIndex].quantity + initialQty;
+        if (!isDecimalAllowed) newQty = Math.round(newQty);
+
+        const subtotal = Math.round(newQty * updated[existingIndex].unitPrice);
         updated[existingIndex] = {
           ...updated[existingIndex],
           quantity: newQty,
-          subtotal: newQty * updated[existingIndex].unitPrice,
+          subtotal,
         };
         return updated;
       } else {
+        const unitPrice = Math.round(product.salePrice);
+        const subtotal = Math.round(initialQty * unitPrice);
         return [
           ...prevItems,
           {
             product,
-            quantity,
-            unitPrice: product.salePrice,
-            subtotal: quantity * product.salePrice,
+            quantity: initialQty,
+            unitPrice,
+            subtotal,
           },
         ];
       }
@@ -40,7 +48,7 @@ export const CartProvider = ({ children }) => {
   };
 
   const updateQuantity = (productId, newQuantity) => {
-    const qty = parseFloat(newQuantity) || 0;
+    let qty = parseFloat(newQuantity) || 0;
     if (qty <= 0) {
       removeFromCart(productId);
       return;
@@ -48,10 +56,15 @@ export const CartProvider = ({ children }) => {
     setItems((prevItems) =>
       prevItems.map((item) => {
         if (item.product.id === productId) {
+          const isDecimalAllowed = item.product.unit?.allowDecimal !== false;
+          if (!isDecimalAllowed) {
+            qty = Math.round(qty);
+          }
+          const subtotal = Math.round(qty * item.unitPrice);
           return {
             ...item,
             quantity: qty,
-            subtotal: qty * item.unitPrice,
+            subtotal,
           };
         }
         return item;
@@ -60,14 +73,15 @@ export const CartProvider = ({ children }) => {
   };
 
   const updateUnitPrice = (productId, newPrice) => {
-    const price = parseFloat(newPrice) || 0;
+    const price = Math.round(parseFloat(newPrice) || 0);
     setItems((prevItems) =>
       prevItems.map((item) => {
         if (item.product.id === productId) {
+          const subtotal = Math.round(item.quantity * price);
           return {
             ...item,
             unitPrice: price,
-            subtotal: item.quantity * price,
+            subtotal,
           };
         }
         return item;
@@ -90,27 +104,27 @@ export const CartProvider = ({ children }) => {
   };
 
   const subtotal = useMemo(() => {
-    return items.reduce((sum, item) => sum + item.subtotal, 0);
+    return Math.round(items.reduce((sum, item) => sum + item.subtotal, 0));
   }, [items]);
 
   const discountAmount = useMemo(() => {
     const val = parseFloat(discountValue) || 0;
     if (discountType === "PERCENTAGE" && val > 0) {
-      return (subtotal * val) / 100;
+      return Math.round((subtotal * val) / 100);
     }
     if (discountType === "FLAT" && val > 0) {
-      return Math.min(val, subtotal);
+      return Math.round(Math.min(val, subtotal));
     }
     return 0;
   }, [subtotal, discountType, discountValue]);
 
   const totalAmount = useMemo(() => {
-    return Math.max(0, subtotal - discountAmount);
+    return Math.round(Math.max(0, subtotal - discountAmount));
   }, [subtotal, discountAmount]);
 
   const changeAmount = useMemo(() => {
     const paid = parseFloat(amountPaid) || 0;
-    return Math.max(0, paid - totalAmount);
+    return Math.round(Math.max(0, paid - totalAmount));
   }, [amountPaid, totalAmount]);
 
   return (

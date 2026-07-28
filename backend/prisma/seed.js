@@ -6,17 +6,18 @@ async function main() {
 
   // 1. Units
   const units = [
-    { name: "guzz", symbol: "g" },
-    { name: "metre", symbol: "m" },
-    { name: "kg", symbol: "kg" },
-    { name: "grams", symbol: "gr" },
-    { name: "pieces", symbol: "pcs" },
+    { name: "guzz", symbol: "g", allowDecimal: true },
+    { name: "metre", symbol: "m", allowDecimal: true },
+    { name: "kg", symbol: "kg", allowDecimal: true },
+    { name: "grams", symbol: "gr", allowDecimal: true },
+    { name: "pieces", symbol: "pcs", allowDecimal: false },
+    { name: "suits", symbol: "st", allowDecimal: false },
   ];
 
   for (const unit of units) {
     await prisma.unit.upsert({
       where: { name: unit.name },
-      update: {},
+      update: { allowDecimal: unit.allowDecimal },
       create: unit,
     });
   }

@@ -1,43 +1,223 @@
 import { prisma } from "../config/prisma.js";
 
-export const getDashboardKpis = async () => {
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
+export const getDashboardKpis = async (params = {}) => {
+  const { period = "7days", startDate: customStart, endDate: customEnd } = params;
 
-  const endOfToday = new Date();
-  endOfToday.setHours(23, 59, 59, 999);
+  let rangeStart = new Date();
+  let rangeEnd = new Date();
+  rangeEnd.setHours(23, 59, 59, 999);
 
-  // 1. Today's sales
-  const todaySales = await prisma.sale.findMany({
+  const now = new Date();
+
+  if (period === "today") {
+    rangeStart.setHours(0, 0, 0, 0);
+  } else if (period === "7days") {
+    rangeStart.setDate(rangeStart.getDate() - 6);
+    rangeStart.setHours(0, 0, 0, 0);
+  } else if (period === "this_month") {
+    rangeStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  } else if (period === "last_month") {
+    rangeStart = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
+    rangeEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+  } else if (period === "this_year") {
+    rangeStart = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
+  } else if (period === "all_time") {
+    rangeStart = new Date(2020, 0, 1, 0, 0, 0, 0);
+  } else if (period === "custom" && customStart && customEnd) {
+    rangeStart = new Date(customStart);
+    rangeStart.setHours(0, 0, 0, 0);
+    rangeEnd = new Date(customEnd);
+    rangeEnd.setHours(23, 59, 59, 999);
+  } else {
+    // Default to last 7 days
+    rangeStart.setDate(rangeStart.getDate() - 6);
+    rangeStart.setHours(0, 0, 0, 0);
+  }
+
+  // 1. Sales in period
+  const periodSales = await prisma.sale.findMany({
     where: {
-      createdAt: { gte: startOfToday, lte: endOfToday },
+      createdAt: { gte: rangeStart, lte: rangeEnd },
       status: { in: ["COMPLETED", "PARTIALLY_REFUNDED"] },
+    },
+    include: {
+      saleItems: {
+        include: { product: { select: { costPrice: true, categoryId: true } } },
+      },
     },
   });
 
-  const todayRevenue = todaySales.reduce((sum, s) => sum + s.totalAmount, 0);
-  const todaySalesCount = todaySales.length;
+  const periodRevenue = periodSales.reduce((sum, s) => sum + s.totalAmount, 0);
+  const periodSalesCount = periodSales.length;
 
-  // 2. Outstanding Khata Balance
+  // Calculate COGS in period
+  let periodCogs = 0;
+  periodSales.forEach((s) => {
+    s.saleItems.forEach((si) => {
+      const cost = si.product ? si.product.costPrice : 0;
+      periodCogs += si.quantity * cost;
+    });
+  });
+
+  // 2. Expenses in period
+  const periodExpensesAgg = await prisma.expense.aggregate({
+    where: { date: { gte: rangeStart, lte: rangeEnd } },
+    _sum: { amount: true },
+  });
+  const periodExpenses = periodExpensesAgg._sum.amount || 0;
+
+  // 3. Returns in period
+  const periodReturnsAgg = await prisma.return.aggregate({
+    where: { createdAt: { gte: rangeStart, lte: rangeEnd } },
+    _sum: { refundAmount: true },
+    _count: { id: true },
+  });
+  const periodReturnsAmount = periodReturnsAgg._sum.refundAmount || 0;
+  const periodReturnsCount = periodReturnsAgg._count.id || 0;
+
+  // 4. Net Profit calculation
+  const grossProfit = periodRevenue - periodCogs;
+  const netProfit = grossProfit - periodExpenses;
+
+  // 5. Total Khata Credit Owed across system
   const customerBalanceAgg = await prisma.customer.aggregate({
     _sum: { outstandingBalance: true },
     _count: { id: true },
   });
   const totalKhataBalance = customerBalanceAgg._sum.outstandingBalance || 0;
 
-  // 3. Low stock count & list
+  // 6. Low stock products
   const allActiveProducts = await prisma.product.findMany({
     where: { isActive: true },
     include: { unit: true, category: true, brand: true },
   });
-
   const lowStockProducts = allActiveProducts.filter(
     (p) => p.stockQuantity <= p.lowStockAlert
   );
 
-  // 4. Recent sales
+  // 7. Payment Methods Breakdown (Cash vs Card vs Credit)
+  const paymentMethodMap = { CASH: 0, CARD: 0, CREDIT: 0 };
+  periodSales.forEach((s) => {
+    const method = s.paymentMethod || "CASH";
+    if (paymentMethodMap[method] !== undefined) {
+      paymentMethodMap[method] += s.totalAmount;
+    }
+  });
+  const paymentMethodBreakdown = [
+    { name: "Cash Counter", value: paymentMethodMap.CASH, color: "#10b981" },
+    { name: "Card / Digital", value: paymentMethodMap.CARD, color: "#3b82f6" },
+    { name: "Khata Credit", value: paymentMethodMap.CREDIT, color: "#f59e0b" },
+  ];
+
+  // 8. Category Breakdown
+  const categoryRevenueMap = {};
+  const categoriesList = await prisma.category.findMany();
+  categoriesList.forEach((c) => {
+    categoryRevenueMap[c.id] = { name: c.name, revenue: 0 };
+  });
+
+  periodSales.forEach((s) => {
+    s.saleItems.forEach((si) => {
+      const catId = si.product?.categoryId;
+      if (catId && categoryRevenueMap[catId]) {
+        categoryRevenueMap[catId].revenue += si.subtotal;
+      }
+    });
+  });
+
+  const categoryBreakdown = Object.values(categoryRevenueMap)
+    .filter((c) => c.revenue > 0)
+    .sort((a, b) => b.revenue - a.revenue);
+
+  // 9. Trend Chart Data (Group by Day or Month depending on range duration)
+  const diffDays = Math.max(1, Math.ceil((rangeEnd - rangeStart) / (1000 * 60 * 60 * 24)));
+  const isMonthlyView = diffDays > 35;
+
+  const salesTrend = [];
+
+  if (isMonthlyView) {
+    // Generate monthly buckets
+    let currentMonth = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1);
+    while (currentMonth <= rangeEnd) {
+      const mStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1, 0, 0, 0);
+      const mEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0, 23, 59, 59);
+
+      const mSales = await prisma.sale.findMany({
+        where: { createdAt: { gte: mStart, lte: mEnd }, status: { in: ["COMPLETED", "PARTIALLY_REFUNDED"] } },
+      });
+      const mRev = mSales.reduce((sum, s) => sum + s.totalAmount, 0);
+
+      const mExpAgg = await prisma.expense.aggregate({
+        where: { date: { gte: mStart, lte: mEnd } },
+        _sum: { amount: true },
+      });
+      const mExp = mExpAgg._sum.amount || 0;
+
+      const mRetAgg = await prisma.return.aggregate({
+        where: { createdAt: { gte: mStart, lte: mEnd } },
+        _sum: { refundAmount: true },
+      });
+      const mRet = mRetAgg._sum.refundAmount || 0;
+
+      const label = mStart.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+
+      salesTrend.push({
+        label,
+        date: mStart.toISOString().split("T")[0],
+        revenue: mRev,
+        expenses: mExp,
+        returns: mRet,
+        netProfit: Math.max(0, mRev - mExp),
+        orders: mSales.length,
+      });
+
+      currentMonth.setMonth(currentMonth.getMonth() + 1);
+    }
+  } else {
+    // Generate daily buckets
+    let dayCursor = new Date(rangeStart);
+    while (dayCursor <= rangeEnd) {
+      const dStart = new Date(dayCursor);
+      dStart.setHours(0, 0, 0, 0);
+      const dEnd = new Date(dayCursor);
+      dEnd.setHours(23, 59, 59, 999);
+
+      const dSales = await prisma.sale.findMany({
+        where: { createdAt: { gte: dStart, lte: dEnd }, status: { in: ["COMPLETED", "PARTIALLY_REFUNDED"] } },
+      });
+      const dRev = dSales.reduce((sum, s) => sum + s.totalAmount, 0);
+
+      const dExpAgg = await prisma.expense.aggregate({
+        where: { date: { gte: dStart, lte: dEnd } },
+        _sum: { amount: true },
+      });
+      const dExp = dExpAgg._sum.amount || 0;
+
+      const dRetAgg = await prisma.return.aggregate({
+        where: { createdAt: { gte: dStart, lte: dEnd } },
+        _sum: { refundAmount: true },
+      });
+      const dRet = dRetAgg._sum.refundAmount || 0;
+
+      const label = dStart.toLocaleDateString("en-US", { weekday: "short", day: "numeric" });
+
+      salesTrend.push({
+        label,
+        date: dStart.toISOString().split("T")[0],
+        revenue: dRev,
+        expenses: dExp,
+        returns: dRet,
+        netProfit: Math.max(0, dRev - dExp),
+        orders: dSales.length,
+      });
+
+      dayCursor.setDate(dayCursor.getDate() + 1);
+    }
+  }
+
+  // 10. Recent sales
   const recentSales = await prisma.sale.findMany({
-    take: 5,
+    take: 6,
     orderBy: { createdAt: "desc" },
     include: {
       customer: { select: { name: true } },
@@ -45,40 +225,56 @@ export const getDashboardKpis = async () => {
     },
   });
 
-  // 5. Last 7 days revenue trend
-  const last7DaysTrend = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const dayStart = new Date(d.setHours(0, 0, 0, 0));
-    const dayEnd = new Date(d.setHours(23, 59, 59, 999));
+  // 11. Top products in period
+  const topItemsGroup = await prisma.saleItem.groupBy({
+    by: ["productId"],
+    _sum: { quantity: true, subtotal: true },
+    where: {
+      sale: { createdAt: { gte: rangeStart, lte: rangeEnd } },
+    },
+    orderBy: { _sum: { subtotal: "desc" } },
+    take: 5,
+  });
 
-    const daySales = await prisma.sale.findMany({
-      where: {
-        createdAt: { gte: dayStart, lte: dayEnd },
-        status: { in: ["COMPLETED", "PARTIALLY_REFUNDED"] },
-      },
+  const topProducts = [];
+  for (const item of topItemsGroup) {
+    const p = await prisma.product.findUnique({
+      where: { id: item.productId },
+      include: { category: true, unit: true },
     });
-
-    const dayRevenue = daySales.reduce((sum, s) => sum + s.totalAmount, 0);
-    const dayName = dayStart.toLocaleDateString("en-US", { weekday: "short" });
-
-    last7DaysTrend.push({
-      date: dayStart.toISOString().split("T")[0],
-      day: dayName,
-      revenue: dayRevenue,
-      count: daySales.length,
-    });
+    if (p) {
+      topProducts.push({
+        id: p.id,
+        name: p.name,
+        categoryName: p.category?.name || "Fabric",
+        unitSymbol: p.unit?.symbol || "pcs",
+        totalSold: item._sum.quantity || 0,
+        revenue: item._sum.subtotal || 0,
+      });
+    }
   }
 
   return {
-    todayRevenue,
-    todaySalesCount,
+    period,
+    startDate: rangeStart.toISOString(),
+    endDate: rangeEnd.toISOString(),
+    todayRevenue: periodRevenue, // Backwards compatibility
+    todaySalesCount: periodSalesCount,
+    todayExpenses: periodExpenses,
+    periodRevenue,
+    periodSalesCount,
+    periodExpenses,
+    periodReturnsAmount,
+    periodReturnsCount,
+    netProfit,
     totalKhataBalance,
     lowStockCount: lowStockProducts.length,
-    lowStockProducts: lowStockProducts.slice(0, 5),
+    lowStockProducts: lowStockProducts.slice(0, 6),
+    paymentMethodBreakdown,
+    categoryBreakdown,
     recentSales,
-    salesTrend: last7DaysTrend,
+    topProducts,
+    salesTrend,
   };
 };
 

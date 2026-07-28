@@ -7,6 +7,7 @@ import { Button } from "../../../components/common/button.jsx";
 import { Modal } from "../../../components/common/modal.jsx";
 import { Input } from "../../../components/common/input.jsx";
 import { Plus, Edit2, Trash2, Layers } from "lucide-react";
+import { showToastSuccess, showToastError, confirmDelete } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
 
 export default function CategoriesPage() {
@@ -52,23 +53,28 @@ export default function CategoriesPage() {
     try {
       if (editingCategory) {
         await api.put(`/categories/${editingCategory.id}`, { name });
+        showToastSuccess("Category updated successfully!");
       } else {
         await api.post("/categories", { name });
+        showToastSuccess("New category added!");
       }
       setShowModal(false);
       fetchCategories();
     } catch (err) {
       setError(err.message);
+      showToastError(err.message);
     }
   };
 
   const handleDelete = async (id) => {
-    if (confirm("Delete this category?")) {
+    const isConfirmed = await confirmDelete("Delete Category?", "Are you sure you want to delete this category?");
+    if (isConfirmed) {
       try {
         await api.delete(`/categories/${id}`);
+        showToastSuccess("Category deleted successfully.");
         fetchCategories();
       } catch (err) {
-        alert(err.message);
+        showToastError(err.message || "Failed to delete category.");
       }
     }
   };

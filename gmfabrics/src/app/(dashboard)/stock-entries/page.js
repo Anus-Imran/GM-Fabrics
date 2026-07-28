@@ -7,6 +7,7 @@ import { StockEntryModal } from "../../../components/inventory/stockEntryModal.j
 import { Card } from "../../../components/common/card.jsx";
 import { Button } from "../../../components/common/button.jsx";
 import { Plus } from "lucide-react";
+import { showToastSuccess, showToastError } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
 
 export default function StockEntriesPage() {
@@ -39,8 +40,13 @@ export default function StockEntriesPage() {
   };
 
   const handleCreateStockEntry = async (formData) => {
-    await api.post("/stock-entries", formData);
-    fetchData();
+    try {
+      await api.post("/stock-entries", formData);
+      showToastSuccess("Stock purchase entry recorded & inventory updated!");
+      fetchData();
+    } catch (err) {
+      showToastError(err.message || "Failed to record stock purchase entry.");
+    }
   };
 
   return (

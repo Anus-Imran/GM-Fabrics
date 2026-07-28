@@ -8,6 +8,7 @@ import { KhataSettleModal } from "../../../components/customers/khataSettleModal
 import { Card } from "../../../components/common/card.jsx";
 import { Button } from "../../../components/common/button.jsx";
 import { Plus, Search } from "lucide-react";
+import { showToastSuccess, showToastError } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
 
 export default function CustomersPage() {
@@ -38,17 +39,28 @@ export default function CustomersPage() {
   };
 
   const handleCreateOrUpdate = async (formData) => {
-    if (editingCustomer) {
-      await api.put(`/customers/${editingCustomer.id}`, formData);
-    } else {
-      await api.post("/customers", formData);
+    try {
+      if (editingCustomer) {
+        await api.put(`/customers/${editingCustomer.id}`, formData);
+        showToastSuccess("Customer profile updated!");
+      } else {
+        await api.post("/customers", formData);
+        showToastSuccess("New customer added!");
+      }
+      fetchCustomers();
+    } catch (err) {
+      showToastError(err.message || "Failed to save customer.");
     }
-    fetchCustomers();
   };
 
   const handleSettleBalance = async (customerId, payload) => {
-    await api.put(`/customers/${customerId}/settle`, payload);
-    fetchCustomers();
+    try {
+      await api.put(`/customers/${customerId}/settle`, payload);
+      showToastSuccess("Khata payment settled successfully!");
+      fetchCustomers();
+    } catch (err) {
+      showToastError(err.message || "Failed to settle Khata balance.");
+    }
   };
 
   const filtered = customers.filter(

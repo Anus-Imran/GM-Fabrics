@@ -7,6 +7,7 @@ import { Button } from "../../../components/common/button.jsx";
 import { Modal } from "../../../components/common/modal.jsx";
 import { Input } from "../../../components/common/input.jsx";
 import { Plus, Edit2, Trash2, Tag } from "lucide-react";
+import { showToastSuccess, showToastError, confirmDelete } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
 
 export default function BrandsPage() {
@@ -55,23 +56,28 @@ export default function BrandsPage() {
     try {
       if (editingBrand) {
         await api.put(`/brands/${editingBrand.id}`, { name, country });
+        showToastSuccess("Brand updated successfully!");
       } else {
         await api.post("/brands", { name, country });
+        showToastSuccess("New brand added!");
       }
       setShowModal(false);
       fetchBrands();
     } catch (err) {
       setError(err.message);
+      showToastError(err.message);
     }
   };
 
   const handleDelete = async (id) => {
-    if (confirm("Delete this brand label?")) {
+    const isConfirmed = await confirmDelete("Delete Brand?", "Are you sure you want to delete this brand label?");
+    if (isConfirmed) {
       try {
         await api.delete(`/brands/${id}`);
+        showToastSuccess("Brand deleted successfully.");
         fetchBrands();
       } catch (err) {
-        alert(err.message);
+        showToastError(err.message || "Failed to delete brand.");
       }
     }
   };

@@ -6,8 +6,11 @@ const router = express.Router();
 
 router.use(authenticateUser);
 
+router.get("/", returnController.getAllReturns);
 router.post("/", returnController.createReturn);
 router.get("/:id", returnController.getReturn);
 router.get("/sale/:saleId", returnController.getSaleReturns);
+router.delete("/:id", returnController.deleteReturn);
 
 export default router;
+

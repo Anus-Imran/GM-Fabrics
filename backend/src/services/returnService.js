@@ -148,3 +148,86 @@ export const getReturnsBySaleId = async (saleId) => {
     orderBy: { createdAt: "desc" },
   });
 };
+
+export const getAllReturns = async () => {
+  return prisma.return.findMany({
+    include: {
+      returnItems: {
+        include: {
+          product: { include: { unit: true } },
+          saleItem: true,
+        },
+      },
+      sale: {
+        include: { customer: true, user: { select: { name: true } } },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+};
+
+export const deleteReturn = async (id) => {
+  const returnId = parseInt(id, 10);
+  if (isNaN(returnId)) throw new Error("Invalid Return ID");
+
+  return prisma.$transaction(async (tx) => {
+    // 1. Fetch return record with return items and original sale
+    const returnRecord = await tx.return.findUnique({
+      where: { id: returnId },
+      include: {
+        returnItems: true,
+        sale: true,
+      },
+    });
+
+    if (!returnRecord) {
+      throw new Error("Return record not found");
+    }
+
+    // 2. Reverse inventory restock: decrement product stock (which was added when return was processed)
+    for (const item of returnRecord.returnItems) {
+      await tx.product.update({
+        where: { id: item.productId },
+        data: {
+          stockQuantity: { decrement: item.quantity },
+        },
+      });
+    }
+
+    // 3. Revert Customer Khata balance if sale was CREDIT
+    if (returnRecord.sale.paymentMethod === "CREDIT" && returnRecord.sale.customerId) {
+      await tx.customer.update({
+        where: { id: returnRecord.sale.customerId },
+        data: {
+          outstandingBalance: { increment: returnRecord.refundAmount },
+        },
+      });
+    }
+
+    // 4. Delete the return record (returnItems are deleted via onDelete: Cascade)
+    await tx.return.delete({
+      where: { id: returnId },
+    });
+
+    // 5. Recalculate original Sale status
+    const remainingReturns = await tx.return.findMany({
+      where: { saleId: returnRecord.saleId },
+    });
+    const cumulativeRefund = remainingReturns.reduce((sum, r) => sum + r.refundAmount, 0);
+
+    let newStatus = "COMPLETED";
+    if (cumulativeRefund >= returnRecord.sale.totalAmount) {
+      newStatus = "REFUNDED";
+    } else if (cumulativeRefund > 0) {
+      newStatus = "PARTIALLY_REFUNDED";
+    }
+
+    await tx.sale.update({
+      where: { id: returnRecord.saleId },
+      data: { status: newStatus },
+    });
+
+    return { id: returnId };
+  });
+};
+

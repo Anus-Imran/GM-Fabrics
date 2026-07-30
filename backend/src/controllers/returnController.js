@@ -31,3 +31,23 @@ export const getSaleReturns = async (req, res) => {
     return sendError(res, error.message, 500);
   }
 };
+
+export const getAllReturns = async (req, res) => {
+  try {
+    const returns = await returnService.getAllReturns();
+    return sendSuccess(res, "All returns retrieved", returns);
+  } catch (error) {
+    return sendError(res, error.message, 500);
+  }
+};
+
+export const deleteReturn = async (req, res) => {
+  try {
+    const result = await returnService.deleteReturn(req.params.id);
+    return sendSuccess(res, "Return deleted and stock adjusted successfully", result);
+  } catch (error) {
+    const status = error.message.includes("not found") ? 404 : 400;
+    return sendError(res, error.message, status);
+  }
+};
+

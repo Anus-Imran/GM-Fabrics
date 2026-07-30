@@ -8,7 +8,7 @@ import { Badge } from "../../../components/common/badge.jsx";
 import { ReceiptModal } from "../../../components/pos/receiptModal.jsx";
 import { formatCurrency } from "../../../utils/formatCurrency.js";
 import { formatDateTime } from "../../../utils/formatDate.js";
-import { Printer, Eye } from "lucide-react";
+import { Printer, Eye, RotateCcw } from "lucide-react";
 import api from "../../../services/apiService.js";
 
 export default function SalesPage() {
@@ -17,21 +17,23 @@ export default function SalesPage() {
   const [selectedSale, setSelectedSale] = useState(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
 
+  const fetchSales = () => {
+    return api
+      .get("/sales")
+      .then((res) => {
+        if (res.data) setSales(res.data);
+      })
+      .catch(console.error)
+      .finally(() => {
+        setLoading(false);
+      });
+  };
+
   useEffect(() => {
     fetchSales();
   }, []);
 
-  const fetchSales = async () => {
-    setLoading(true);
-    try {
-      const res = await api.get("/sales");
-      if (res.data) setSales(res.data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+
 
   const handlePrint = (sale) => {
     setSelectedSale(sale);
@@ -59,7 +61,7 @@ export default function SalesPage() {
                 <th className="py-3 px-3">Amount</th>
                 <th className="py-3 px-3">Payment</th>
                 <th className="py-3 px-3">Status</th>
-                <th className="py-3 px-3 text-right">Receipt</th>
+                <th className="py-3 px-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -89,12 +91,20 @@ export default function SalesPage() {
                     </Badge>
                   </td>
                   <td className="py-3 px-3 text-right">
-                    <button
-                      onClick={() => handlePrint(sale)}
-                      className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 text-zinc-900 dark:text-zinc-100 rounded text-[11px] font-semibold inline-flex items-center gap-1"
-                    >
-                      <Printer className="w-3 h-3" /> Print
-                    </button>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => handlePrint(sale)}
+                        className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 text-zinc-900 dark:text-zinc-100 rounded text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <Printer className="w-3 h-3" /> Print
+                      </button>
+                      <Link
+                        href={`/returns?saleNumber=${encodeURIComponent(sale.saleNumber)}`}
+                        className="px-2 py-1 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 rounded text-[11px] font-semibold inline-flex items-center gap-1 border border-amber-200 dark:border-amber-800 transition-colors"
+                      >
+                        <RotateCcw className="w-3 h-3" /> Return
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               ))}

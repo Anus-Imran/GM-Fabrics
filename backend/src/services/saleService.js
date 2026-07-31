@@ -33,10 +33,15 @@ export const getAllSales = async (filters = {}) => {
   });
 };
 
-export const getSaleById = async (id) => {
-  const saleId = parseInt(id, 10);
-  const sale = await prisma.sale.findUnique({
-    where: { id: saleId },
+export const getSaleById = async (idOrNumber) => {
+  const term = String(idOrNumber).trim();
+  const numericId = parseInt(term, 10);
+  const isNumeric = !isNaN(numericId) && String(numericId) === term;
+
+  const sale = await prisma.sale.findFirst({
+    where: isNumeric
+      ? { OR: [{ id: numericId }, { saleNumber: { equals: term, mode: "insensitive" } }] }
+      : { saleNumber: { equals: term, mode: "insensitive" } },
     include: {
       customer: true,
       user: { select: { id: true, name: true, email: true } },
@@ -52,7 +57,7 @@ export const getSaleById = async (id) => {
     },
   });
 
-  if (!sale) throw new Error("Sale not found");
+  if (!sale) throw new Error(`Sale bill "${term}" not found`);
   return sale;
 };
 

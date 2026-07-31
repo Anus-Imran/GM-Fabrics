@@ -63,28 +63,10 @@ function ReturnsContent() {
     if (!term) return Promise.resolve();
 
     return api
-      .get("/sales")
-      .then((allSales) => {
-        setError("");
-        let saleIdToFetch = null;
-        if (allSales.data) {
-          setSalesList(allSales.data);
-          const match = allSales.data.find(
-            (s) => s.saleNumber.toLowerCase() === term.trim().toLowerCase() || String(s.id) === String(term)
-          );
-          if (match) saleIdToFetch = match.id;
-        }
-
-        if (!saleIdToFetch && !isNaN(parseInt(term, 10))) {
-          saleIdToFetch = parseInt(term, 10);
-        }
-
-        if (saleIdToFetch) {
-          return api.get(`/sales/${saleIdToFetch}`);
-        }
-      })
+      .get(`/sales/${encodeURIComponent(term.trim())}`)
       .then((res) => {
         if (res && res.data) {
+          setError("");
           setTargetSale(res.data);
           const initialQtyMap = {};
           const initialConditionMap = {};
@@ -98,6 +80,7 @@ function ReturnsContent() {
       })
       .catch((err) => {
         console.error("Auto lookup error:", err);
+        setError(err.message || "Bill number not found.");
       });
   };
 
@@ -114,34 +97,8 @@ function ReturnsContent() {
     if (!selectedSaleNumber) return;
 
     const term = selectedSaleNumber.trim();
-    const found = salesList.find(
-      (s) => s.saleNumber.toLowerCase() === term.toLowerCase() || String(s.id) === String(term)
-    );
-
-    let saleIdToFetch = found ? found.id : null;
-
-    if (!found) {
-      try {
-        const allSales = await api.get("/sales");
-        if (allSales.data) {
-          setSalesList(allSales.data);
-          const match = allSales.data.find(
-            (s) => s.saleNumber.toLowerCase() === term.toLowerCase() || String(s.id) === String(term)
-          );
-          if (match) saleIdToFetch = match.id;
-        }
-      } catch (err) {
-        console.error(err);
-      }
-    }
-
-    if (!saleIdToFetch) {
-      setError("Bill number not found.");
-      return;
-    }
-
     try {
-      const res = await api.get(`/sales/${saleIdToFetch}`);
+      const res = await api.get(`/sales/${encodeURIComponent(term)}`);
       if (res.data) {
         setTargetSale(res.data);
         const initialQtyMap = {};
@@ -154,7 +111,7 @@ function ReturnsContent() {
         setItemConditions(initialConditionMap);
       }
     } catch (err) {
-      setError("Failed to load sale details.");
+      setError(err.message || "Failed to load sale details.");
     }
   };
 

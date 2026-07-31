@@ -23,6 +23,7 @@ export const createReturn = async (data) => {
     for (const item of items) {
       const saleItemId = parseInt(item.saleItemId, 10);
       const returnQty = parseFloat(item.quantity);
+      const condition = item.condition === "DAMAGED_WASTE" ? "DAMAGED_WASTE" : "RESTOCK";
 
       const saleItem = sale.saleItems.find((si) => si.id === saleItemId);
       if (!saleItem) throw new Error(`Sale item ID ${saleItemId} not found in this sale`);
@@ -44,7 +45,7 @@ export const createReturn = async (data) => {
         );
       }
 
-      // Round refund price to integer PKR
+      // Round refund price to integer PKR based on actual sold unit price
       const itemRefundAmount = Math.round(returnQty * saleItem.unitPrice);
       totalRefund += itemRefundAmount;
 
@@ -53,8 +54,12 @@ export const createReturn = async (data) => {
         productId: saleItem.productId,
         quantity: returnQty,
         refundAmount: itemRefundAmount,
+        condition,
       });
     }
+
+    // Determine final refund method (If sale was CREDIT, force or default to CREDIT to protect Khata ledger)
+    const finalRefundMethod = (sale.paymentMethod === "CREDIT" && sale.customerId) ? "CREDIT" : (refundMethod || sale.paymentMethod);
 
     // 2. Create Return record
     const returnRecord = await tx.return.create({
@@ -62,11 +67,11 @@ export const createReturn = async (data) => {
         saleId: sId,
         reason: reason || null,
         refundAmount: Math.round(totalRefund),
-        refundMethod: refundMethod || sale.paymentMethod,
+        refundMethod: finalRefundMethod,
       },
     });
 
-    // 3. Create ReturnItems & Restock Inventory
+    // 3. Create ReturnItems & Restock Inventory (ONLY if condition === "RESTOCK")
     for (const item of preparedReturnItems) {
       await tx.returnItem.create({
         data: {
@@ -75,20 +80,23 @@ export const createReturn = async (data) => {
           productId: item.productId,
           quantity: item.quantity,
           refundAmount: item.refundAmount,
+          condition: item.condition,
         },
       });
 
-      // Increment product stock (restock)
-      await tx.product.update({
-        where: { id: item.productId },
-        data: {
-          stockQuantity: { increment: item.quantity },
-        },
-      });
+      // Increment product stock ONLY for RESTOCK condition (Damaged/Waste is written off without inflating stock)
+      if (item.condition === "RESTOCK") {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: {
+            stockQuantity: { increment: item.quantity },
+          },
+        });
+      }
     }
 
-    // 4. Update Customer Khata balance if sale was CREDIT
-    if (sale.paymentMethod === "CREDIT" && sale.customerId) {
+    // 4. Update Customer Khata balance if refund is CREDIT or sale was CREDIT
+    if ((finalRefundMethod === "CREDIT" || sale.paymentMethod === "CREDIT") && sale.customerId) {
       await tx.customer.update({
         where: { id: sale.customerId },
         data: {
@@ -114,7 +122,7 @@ export const createReturn = async (data) => {
         returnItems: {
           include: { product: { include: { unit: true } } },
         },
-        sale: { select: { saleNumber: true, createdAt: true } },
+        sale: { select: { saleNumber: true, createdAt: true, customer: true } },
       },
     });
   });
@@ -184,18 +192,20 @@ export const deleteReturn = async (id) => {
       throw new Error("Return record not found");
     }
 
-    // 2. Reverse inventory restock: decrement product stock (which was added when return was processed)
+    // 2. Reverse inventory restock: decrement product stock ONLY if item was originally RESTOCKED
     for (const item of returnRecord.returnItems) {
-      await tx.product.update({
-        where: { id: item.productId },
-        data: {
-          stockQuantity: { decrement: item.quantity },
-        },
-      });
+      if (item.condition === "RESTOCK") {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: {
+            stockQuantity: { decrement: item.quantity },
+          },
+        });
+      }
     }
 
-    // 3. Revert Customer Khata balance if sale was CREDIT
-    if (returnRecord.sale.paymentMethod === "CREDIT" && returnRecord.sale.customerId) {
+    // 3. Revert Customer Khata balance if refund was CREDIT or sale was CREDIT
+    if ((returnRecord.refundMethod === "CREDIT" || returnRecord.sale.paymentMethod === "CREDIT") && returnRecord.sale.customerId) {
       await tx.customer.update({
         where: { id: returnRecord.sale.customerId },
         data: {
@@ -230,4 +240,5 @@ export const deleteReturn = async (id) => {
     return { id: returnId };
   });
 };
+
 

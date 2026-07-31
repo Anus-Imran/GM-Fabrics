@@ -253,6 +253,7 @@ model ReturnItem {
 
   quantity     Float
   refundAmount Float
+  condition    String   @default("RESTOCK")
   createdAt    DateTime @default(now())
 }
 

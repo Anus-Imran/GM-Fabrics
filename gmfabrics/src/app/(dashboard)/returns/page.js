@@ -185,11 +185,13 @@ function ReturnsContent() {
     }
   };
 
-  // Calculate estimated total refund for modal items using actual sold unit price
+  // Calculate estimated total refund for modal items using actual effective discounted unit price
+  const discountRatio = targetSale && targetSale.subtotal > 0 ? targetSale.totalAmount / targetSale.subtotal : 1;
   const calculatedTotalRefund = targetSale
     ? targetSale.saleItems.reduce((sum, si) => {
         const qty = parseFloat(returnQtyMap[si.id]) || 0;
-        return sum + Math.round(qty * si.unitPrice);
+        const effectiveUnitPrice = si.unitPrice * discountRatio;
+        return sum + Math.round(qty * effectiveUnitPrice);
       }, 0)
     : 0;
 
@@ -348,8 +350,13 @@ function ReturnsContent() {
                     <div className="flex items-center justify-between">
                       <div className="space-y-0.5">
                         <p className="font-bold text-zinc-900 dark:text-zinc-100">{si.product.name}</p>
-                        <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
-                          <Tag className="w-3 h-3" /> Actual Sold Price: <span className="font-bold">{formatCurrency(si.unitPrice)}</span> / {si.product.unit?.symbol || "unit"}
+                        <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1 flex-wrap">
+                          <Tag className="w-3 h-3" /> Effective Sold Rate: <span className="font-bold">{formatCurrency(Math.round(si.unitPrice * discountRatio))}</span> / {si.product.unit?.symbol || "unit"}
+                          {discountRatio < 1 && (
+                            <span className="text-[10px] text-zinc-400 line-through font-normal ml-1">
+                              ({formatCurrency(si.unitPrice)})
+                            </span>
+                          )}
                         </p>
                         <p className="text-[10px] text-zinc-400">
                           Bought Qty: {si.quantity} {si.product.unit?.symbol}

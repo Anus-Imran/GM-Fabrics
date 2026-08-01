@@ -1,4 +1,5 @@
 import { prisma } from "../config/prisma.js";
+import { generateReceiptHtml } from "../utils/receiptUtil.js";
 
 export const createReturn = async (data) => {
   const { saleId, items, reason, refundMethod } = data;
@@ -19,6 +20,9 @@ export const createReturn = async (data) => {
 
     let totalRefund = 0;
     const preparedReturnItems = [];
+
+    // Calculate effective discount ratio (if sale had a overall discount applied)
+    const discountRatio = sale.subtotal > 0 ? sale.totalAmount / sale.subtotal : 1;
 
     for (const item of items) {
       const saleItemId = parseInt(item.saleItemId, 10);
@@ -45,8 +49,9 @@ export const createReturn = async (data) => {
         );
       }
 
-      // Round refund price to integer PKR based on actual sold unit price
-      const itemRefundAmount = Math.round(returnQty * saleItem.unitPrice);
+      // Round refund price to integer PKR based on actual effective discounted unit price paid
+      const effectiveUnitPrice = saleItem.unitPrice * discountRatio;
+      const itemRefundAmount = Math.round(returnQty * effectiveUnitPrice);
       totalRefund += itemRefundAmount;
 
       preparedReturnItems.push({
@@ -114,6 +119,22 @@ export const createReturn = async (data) => {
     await tx.sale.update({
       where: { id: sId },
       data: { status: newStatus },
+    });
+
+    // 6. Regenerate and update thermal Receipt HTML with returns information
+    const updatedSaleForReceipt = await tx.sale.findUnique({
+      where: { id: sId },
+      include: {
+        customer: true,
+        user: { select: { id: true, name: true } },
+        saleItems: { include: { product: { include: { unit: true } } } },
+        returns: { include: { returnItems: true } },
+      },
+    });
+    const newReceiptHtml = generateReceiptHtml(updatedSaleForReceipt);
+    await tx.receipt.update({
+      where: { saleId: sId },
+      data: { receiptHtml: newReceiptHtml },
     });
 
     return tx.return.findUnique({
@@ -235,6 +256,22 @@ export const deleteReturn = async (id) => {
     await tx.sale.update({
       where: { id: returnRecord.saleId },
       data: { status: newStatus },
+    });
+
+    // 6. Regenerate updated thermal Receipt HTML
+    const updatedSaleForReceipt = await tx.sale.findUnique({
+      where: { id: returnRecord.saleId },
+      include: {
+        customer: true,
+        user: { select: { id: true, name: true } },
+        saleItems: { include: { product: { include: { unit: true } } } },
+        returns: { include: { returnItems: true } },
+      },
+    });
+    const newReceiptHtml = generateReceiptHtml(updatedSaleForReceipt);
+    await tx.receipt.update({
+      where: { saleId: returnRecord.saleId },
+      data: { receiptHtml: newReceiptHtml },
     });
 
     return { id: returnId };

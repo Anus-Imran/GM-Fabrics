@@ -28,6 +28,9 @@ export const getAllSales = async (filters = {}) => {
         },
       },
       receipt: true,
+      returns: {
+        include: { returnItems: true },
+      },
     },
     orderBy: { createdAt: "desc" },
   });

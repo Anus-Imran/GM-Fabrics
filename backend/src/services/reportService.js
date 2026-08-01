@@ -47,17 +47,8 @@ export const getDashboardKpis = async (params = {}) => {
     },
   });
 
-  const periodRevenue = periodSales.reduce((sum, s) => sum + s.totalAmount, 0);
+  const periodGrossSales = periodSales.reduce((sum, s) => sum + s.totalAmount, 0);
   const periodSalesCount = periodSales.length;
-
-  // Calculate COGS in period
-  let periodCogs = 0;
-  periodSales.forEach((s) => {
-    s.saleItems.forEach((si) => {
-      const cost = si.product ? si.product.costPrice : 0;
-      periodCogs += si.quantity * cost;
-    });
-  });
 
   // 2. Expenses in period
   const periodExpensesAgg = await prisma.expense.aggregate({
@@ -75,7 +66,19 @@ export const getDashboardKpis = async (params = {}) => {
   const periodReturnsAmount = periodReturnsAgg._sum.refundAmount || 0;
   const periodReturnsCount = periodReturnsAgg._count.id || 0;
 
-  // 4. Net Profit calculation
+  // Net Revenue = Gross Sales Total - Returns Total
+  const periodRevenue = Math.max(0, periodGrossSales - periodReturnsAmount);
+
+  // Calculate COGS in period
+  let periodCogs = 0;
+  periodSales.forEach((s) => {
+    s.saleItems.forEach((si) => {
+      const cost = si.product ? si.product.costPrice : 0;
+      periodCogs += si.quantity * cost;
+    });
+  });
+
+  // 4. Net Profit calculation (Net Revenue - COGS - Operating Expenses)
   const grossProfit = periodRevenue - periodCogs;
   const netProfit = grossProfit - periodExpenses;
 
@@ -95,7 +98,7 @@ export const getDashboardKpis = async (params = {}) => {
     (p) => p.stockQuantity <= p.lowStockAlert
   );
 
-  // 7. Payment Methods Breakdown (Cash vs Card vs Credit)
+  // 7. Payment Methods Breakdown (Cash vs Card vs Credit) with Net Sales
   const paymentMethodMap = { CASH: 0, CARD: 0, CREDIT: 0 };
   periodSales.forEach((s) => {
     const method = s.paymentMethod || "CASH";
@@ -103,6 +106,18 @@ export const getDashboardKpis = async (params = {}) => {
       paymentMethodMap[method] += s.totalAmount;
     }
   });
+
+  // Deduct returned amounts by refund method
+  const periodReturnsList = await prisma.return.findMany({
+    where: { createdAt: { gte: rangeStart, lte: rangeEnd } },
+  });
+  periodReturnsList.forEach((r) => {
+    const method = r.refundMethod || "CASH";
+    if (paymentMethodMap[method] !== undefined) {
+      paymentMethodMap[method] = Math.max(0, paymentMethodMap[method] - r.refundAmount);
+    }
+  });
+
   const paymentMethodBreakdown = [
     { name: "Cash Counter", value: paymentMethodMap.CASH, color: "#10b981" },
     { name: "Card / Digital", value: paymentMethodMap.CARD, color: "#3b82f6" },
@@ -145,7 +160,7 @@ export const getDashboardKpis = async (params = {}) => {
       const mSales = await prisma.sale.findMany({
         where: { createdAt: { gte: mStart, lte: mEnd }, status: { in: ["COMPLETED", "PARTIALLY_REFUNDED"] } },
       });
-      const mRev = mSales.reduce((sum, s) => sum + s.totalAmount, 0);
+      const mGross = mSales.reduce((sum, s) => sum + s.totalAmount, 0);
 
       const mExpAgg = await prisma.expense.aggregate({
         where: { date: { gte: mStart, lte: mEnd } },
@@ -159,15 +174,16 @@ export const getDashboardKpis = async (params = {}) => {
       });
       const mRet = mRetAgg._sum.refundAmount || 0;
 
+      const mNetRev = Math.max(0, mGross - mRet);
       const label = mStart.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
 
       salesTrend.push({
         label,
         date: mStart.toISOString().split("T")[0],
-        revenue: mRev,
+        revenue: mNetRev,
         expenses: mExp,
         returns: mRet,
-        netProfit: Math.max(0, mRev - mExp),
+        netProfit: Math.max(0, mNetRev - mExp),
         orders: mSales.length,
       });
 
@@ -185,7 +201,7 @@ export const getDashboardKpis = async (params = {}) => {
       const dSales = await prisma.sale.findMany({
         where: { createdAt: { gte: dStart, lte: dEnd }, status: { in: ["COMPLETED", "PARTIALLY_REFUNDED"] } },
       });
-      const dRev = dSales.reduce((sum, s) => sum + s.totalAmount, 0);
+      const dGross = dSales.reduce((sum, s) => sum + s.totalAmount, 0);
 
       const dExpAgg = await prisma.expense.aggregate({
         where: { date: { gte: dStart, lte: dEnd } },
@@ -199,15 +215,16 @@ export const getDashboardKpis = async (params = {}) => {
       });
       const dRet = dRetAgg._sum.refundAmount || 0;
 
+      const dNetRev = Math.max(0, dGross - dRet);
       const label = dStart.toLocaleDateString("en-US", { weekday: "short", day: "numeric" });
 
       salesTrend.push({
         label,
         date: dStart.toISOString().split("T")[0],
-        revenue: dRev,
+        revenue: dNetRev,
         expenses: dExp,
         returns: dRet,
-        netProfit: Math.max(0, dRev - dExp),
+        netProfit: Math.max(0, dNetRev - dExp),
         orders: dSales.length,
       });
 
@@ -368,7 +385,14 @@ export const getProfitLossReport = async (month, year) => {
     },
   });
 
-  const totalRevenue = sales.reduce((sum, s) => sum + s.totalAmount, 0);
+  const grossRevenue = sales.reduce((sum, s) => sum + s.totalAmount, 0);
+
+  const returnsAgg = await prisma.return.aggregate({
+    where: { createdAt: { gte: startDate, lte: endDate } },
+    _sum: { refundAmount: true },
+  });
+  const totalReturns = returnsAgg._sum.refundAmount || 0;
+  const totalRevenue = Math.max(0, grossRevenue - totalReturns);
 
   // 2. Cost of Goods Sold (COGS)
   let cogs = 0;

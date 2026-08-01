@@ -10,6 +10,11 @@ export const generateReceiptHtml = (sale) => {
   const customerName = sale.customer ? sale.customer.name : "Walk-in Customer";
   const cashierName = sale.user ? sale.user.name : "Cashier";
 
+  const totalRefunded = (sale.returns || []).reduce((sum, r) => sum + (r.refundAmount || 0), 0);
+  const netAmount = Math.max(0, (sale.totalAmount || 0) - totalRefunded);
+  const isRefunded = sale.status === "REFUNDED" || totalRefunded >= sale.totalAmount;
+  const isPartiallyRefunded = sale.status === "PARTIALLY_REFUNDED" || (totalRefunded > 0 && !isRefunded);
+
   const itemsHtml = (sale.saleItems || [])
     .map(
       (item) => `
@@ -42,7 +47,7 @@ export const generateReceiptHtml = (sale) => {
     }
     .text-center { text-align: center; }
     .text-right { text-align: right; }
-    .text-left { text-align: left; }
+    .text-left { text-left: left; }
     .divider { border-top: 1px dashed #000; margin: 8px 0; }
     .double-divider { border-top: 2px double #000; margin: 8px 0; }
     .title { font-size: 16px; font-weight: bold; }
@@ -52,6 +57,7 @@ export const generateReceiptHtml = (sale) => {
     .row { display: flex; justify-content: space-between; margin: 2px 0; }
     .bold { font-weight: bold; }
     .total-row { font-size: 14px; font-weight: bold; }
+    .status-badge { text-align: center; font-weight: bold; margin: 4px 0; font-size: 11px; }
   </style>
 </head>
 <body>
@@ -60,6 +66,14 @@ export const generateReceiptHtml = (sale) => {
     <div class="subtitle">Main Bazar, Lahore</div>
     <div class="subtitle">Tel: +92 300 1234567</div>
   </div>
+
+  ${
+    isRefunded
+      ? `<div class="status-badge" style="color: #dc2626;">*** REFUNDED BILL ***</div>`
+      : isPartiallyRefunded
+      ? `<div class="status-badge" style="color: #d97706;">*** PARTIALLY REFUNDED ***</div>`
+      : ""
+  }
 
   <div class="double-divider"></div>
 
@@ -95,7 +109,14 @@ export const generateReceiptHtml = (sale) => {
   
   <div class="double-divider"></div>
   
-  <div class="row total-row"><span>TOTAL:</span><span>PKR ${sale.totalAmount.toLocaleString()}</span></div>
+  <div class="row ${totalRefunded > 0 ? '' : 'total-row'}"><span>Original Total:</span><span>PKR ${sale.totalAmount.toLocaleString()}</span></div>
+  ${
+    totalRefunded > 0
+      ? `<div class="row" style="color: #d97706; font-weight: bold;"><span>Total Returned:</span><span>- PKR ${totalRefunded.toLocaleString()}</span></div>
+         <div class="double-divider"></div>
+         <div class="row total-row"><span>NET TOTAL:</span><span>PKR ${netAmount.toLocaleString()}</span></div>`
+      : ""
+  }
   
   <div class="divider"></div>
 
@@ -112,3 +133,4 @@ export const generateReceiptHtml = (sale) => {
 </html>
   `.trim();
 };
+

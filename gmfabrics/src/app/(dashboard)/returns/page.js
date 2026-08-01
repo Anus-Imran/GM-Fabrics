@@ -210,78 +210,106 @@ function ReturnsContent() {
       <Card>
         {loading ? (
           <div className="py-8 text-center text-xs text-zinc-400">Loading sales returns...</div>
-        ) : returns.length === 0 ? (
-          <div className="py-8 text-center text-xs text-zinc-400">No return records found.</div>
         ) : (
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-zinc-200 dark:border-zinc-800 text-zinc-500 uppercase tracking-wider font-semibold">
-                <th className="py-3 px-3">Return ID</th>
-                <th className="py-3 px-3">Bill Number</th>
-                <th className="py-3 px-3">Customer</th>
-                <th className="py-3 px-3">Date</th>
-                <th className="py-3 px-3">Items Returned & Condition</th>
-                <th className="py-3 px-3">Refund Amount</th>
-                <th className="py-3 px-3">Refund Method</th>
-                <th className="py-3 px-3">Reason</th>
-                <th className="py-3 px-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {returns.map((ret) => (
-                <tr key={ret.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
-                  <td className="py-3 px-3 font-mono font-bold text-zinc-900 dark:text-zinc-100">
-                    #{ret.id}
-                  </td>
-                  <td className="py-3 px-3 font-mono font-semibold text-zinc-700 dark:text-zinc-300">
-                    {ret.sale?.saleNumber || `Sale #${ret.saleId}`}
-                  </td>
-                  <td className="py-3 px-3 text-zinc-700 dark:text-zinc-300">
-                    {ret.sale?.customer ? ret.sale.customer.name : "Walk-in Customer"}
-                  </td>
-                  <td className="py-3 px-3 text-zinc-500">{formatDateTime(ret.createdAt)}</td>
-                  <td className="py-3 px-3">
-                    <div className="space-y-1">
-                      {ret.returnItems?.map((ri) => (
-                        <div key={ri.id} className="text-[11px] text-zinc-600 dark:text-zinc-400 flex items-center gap-1.5 flex-wrap">
-                          <span>• {ri.product?.name}: <span className="font-semibold">{ri.quantity} {ri.product?.unit?.symbol}</span> (@ {formatCurrency(ri.quantity > 0 ? ri.refundAmount / ri.quantity : 0)})</span>
-                          {ri.condition === "DAMAGED_WASTE" ? (
-                            <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 rounded text-[9px] font-bold inline-flex items-center gap-0.5">
-                              <Scissors className="w-2.5 h-2.5" /> Waste / Scrap
-                            </span>
-                          ) : (
-                            <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 rounded text-[9px] font-bold inline-flex items-center gap-0.5">
-                              <PackageCheck className="w-2.5 h-2.5" /> Restocked
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="py-3 px-3 font-bold text-amber-600 dark:text-amber-400">
-                    {formatCurrency(ret.refundAmount)}
-                  </td>
-                  <td className="py-3 px-3">
-                    <Badge variant={ret.refundMethod === "CREDIT" ? "warning" : "default"}>
-                      {ret.refundMethod === "CREDIT" ? "KHATA CREDIT" : ret.refundMethod}
-                    </Badge>
-                  </td>
-                  <td className="py-3 px-3 text-zinc-500 max-w-[150px] truncate">
-                    {ret.reason || "-"}
-                  </td>
-                  <td className="py-3 px-3 text-right">
-                    <button
-                      onClick={() => handleDeleteReturn(ret.id)}
-                      title="Delete Return Record"
-                      className="p-1.5 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/60 rounded border border-red-200 dark:border-red-800 transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            title="Sales_Returns_History"
+            columns={[
+              {
+                key: "returnIdFormatted",
+                label: "Return ID",
+                render: (ret) => <span className="font-mono font-bold text-zinc-900 dark:text-zinc-100">#{ret.id}</span>,
+              },
+              {
+                key: "saleNumber",
+                label: "Bill Number",
+                render: (ret) => <span className="font-mono font-semibold text-zinc-700 dark:text-zinc-300">{ret.saleNumber}</span>,
+              },
+              {
+                key: "customerName",
+                label: "Customer",
+                render: (ret) => ret.customerName,
+              },
+              {
+                key: "createdAt",
+                label: "Date",
+                render: (ret) => formatDateTime(ret.createdAt),
+              },
+              {
+                key: "itemsSummary",
+                label: "Items Returned & Condition",
+                sortable: false,
+                render: (ret) => (
+                  <div className="space-y-1">
+                    {ret.returnItems?.map((ri) => (
+                      <div key={ri.id} className="text-[11px] text-zinc-600 dark:text-zinc-400 flex items-center gap-1.5 flex-wrap">
+                        <span>• {ri.product?.name}: <span className="font-semibold">{ri.quantity} {ri.product?.unit?.symbol}</span> (@ {formatCurrency(ri.quantity > 0 ? ri.refundAmount / ri.quantity : 0)})</span>
+                        {ri.condition === "DAMAGED_WASTE" ? (
+                          <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 rounded text-[9px] font-bold inline-flex items-center gap-0.5">
+                            <Scissors className="w-2.5 h-2.5" /> Waste / Scrap
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 rounded text-[9px] font-bold inline-flex items-center gap-0.5">
+                            <PackageCheck className="w-2.5 h-2.5" /> Restocked
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ),
+              },
+              {
+                key: "refundAmount",
+                label: "Refund Amount",
+                render: (ret) => <span className="font-bold text-amber-600 dark:text-amber-400">{formatCurrency(ret.refundAmount)}</span>,
+              },
+              {
+                key: "refundMethod",
+                label: "Refund Method",
+                render: (ret) => (
+                  <Badge variant={ret.refundMethod === "CREDIT" ? "warning" : "default"}>
+                    {ret.refundMethod === "CREDIT" ? "KHATA CREDIT" : ret.refundMethod}
+                  </Badge>
+                ),
+              },
+              {
+                key: "reason",
+                label: "Reason",
+                render: (ret) => <span className="text-zinc-500 max-w-[150px] truncate block">{ret.reason || "-"}</span>,
+              },
+              {
+                key: "actions",
+                label: "Actions",
+                sortable: false,
+                cellClassName: "text-right",
+                render: (ret) => (
+                  <button
+                    onClick={() => handleDeleteReturn(ret.id)}
+                    title="Delete Return Record"
+                    className="p-1.5 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/60 rounded border border-red-200 dark:border-red-800 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                ),
+              },
+            ]}
+            data={returns.map((r) => ({
+              ...r,
+              returnIdFormatted: `#${r.id}`,
+              saleNumber: r.sale?.saleNumber || `Sale #${r.saleId}`,
+              customerName: r.sale?.customer ? r.sale.customer.name : "Walk-in Customer",
+            }))}
+            searchKeys={["saleNumber", "customerName", "reason", "refundMethod"]}
+            dateKey="createdAt"
+            onDeleteSelected={async (ids) => {
+              for (const id of ids) {
+                await api.delete(`/returns/${id}`);
+              }
+              showToastSuccess(`Deleted ${ids.length} return record(s)!`);
+              fetchReturns();
+            }}
+            enableSelection={true}
+            enableDateFilter={true}
+          />
         )}
       </Card>
 

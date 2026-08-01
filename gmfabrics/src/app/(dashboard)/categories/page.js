@@ -10,6 +10,8 @@ import { Plus, Edit2, Trash2, Layers } from "lucide-react";
 import { showToastSuccess, showToastError, confirmDelete } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
 
+import { DataTable } from "../../../components/common/dataTable.jsx";
+
 export default function CategoriesPage() {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -85,7 +87,7 @@ export default function CategoriesPage() {
         title="Fabric Categories"
         description="Classify your fabrics (Lawn, Cotton, Silk, Chiffon, Linen, Velvet, etc.)."
         action={
-          <Button onClick={() => handleOpenModal()} className="flex items-center gap-2 font-bold">
+          <Button onClick={() => handleOpenModal()} className="flex items-center gap-2 font-bold cursor-pointer">
             <Plus className="w-4 h-4" /> Add New Category
           </Button>
         }
@@ -95,44 +97,63 @@ export default function CategoriesPage() {
         {loading ? (
           <div className="py-8 text-center text-xs text-zinc-400">Loading categories...</div>
         ) : (
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-zinc-200 dark:border-zinc-800 text-zinc-500 uppercase tracking-wider font-semibold">
-                <th className="py-3 px-3">Category Name</th>
-                <th className="py-3 px-3">Associated Products</th>
-                <th className="py-3 px-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {categories.map((c) => (
-                <tr key={c.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
-                  <td className="py-3 px-3 font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                    <Layers className="w-4 h-4 text-zinc-400" />
+          <DataTable
+            title="Fabric_Categories"
+            columns={[
+              {
+                key: "name",
+                label: "Category Name",
+                render: (c) => (
+                  <div className="font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-zinc-400 shrink-0" />
                     <span>{c.name}</span>
-                  </td>
-                  <td className="py-3 px-3 text-zinc-600 dark:text-zinc-400">
-                    {c._count?.products || 0} products
-                  </td>
-                  <td className="py-3 px-3 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        onClick={() => handleOpenModal(c)}
-                        className="p-1.5 rounded text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(c.id)}
-                        className="p-1.5 rounded text-red-500 hover:text-red-700 hover:bg-red-50"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                ),
+              },
+              {
+                key: "productsCount",
+                label: "Associated Products",
+                render: (c) => `${c._count?.products || 0} products`,
+              },
+              {
+                key: "actions",
+                label: "Actions",
+                sortable: false,
+                cellClassName: "text-right",
+                render: (c) => (
+                  <div className="flex items-center justify-end gap-1">
+                    <button
+                      onClick={() => handleOpenModal(c)}
+                      className="p-1.5 rounded text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 cursor-pointer"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(c.id)}
+                      className="p-1.5 rounded text-red-500 hover:text-red-700 hover:bg-red-50 cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ),
+              },
+            ]}
+            data={categories.map((c) => ({
+              ...c,
+              productsCount: c._count?.products || 0,
+            }))}
+            searchKeys={["name"]}
+            dateKey="createdAt"
+            onDeleteSelected={async (ids) => {
+              for (const id of ids) {
+                await api.delete(`/categories/${id}`);
+              }
+              showToastSuccess(`Deleted ${ids.length} category(ies)!`);
+              fetchCategories();
+            }}
+            enableSelection={true}
+            enableDateFilter={false}
+          />
         )}
       </Card>
 

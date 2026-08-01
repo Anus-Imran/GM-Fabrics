@@ -101,50 +101,74 @@ export default function SuppliersPage() {
         {loading ? (
           <div className="py-8 text-center text-xs text-zinc-400">Loading suppliers...</div>
         ) : (
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-zinc-200 dark:border-zinc-800 text-zinc-500 uppercase tracking-wider font-semibold">
-                <th className="py-3 px-3">Supplier Name</th>
-                <th className="py-3 px-3">Phone</th>
-                <th className="py-3 px-3">City / Address</th>
-                <th className="py-3 px-3">Purchases</th>
-                <th className="py-3 px-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {suppliers.map((s) => (
-                <tr key={s.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
-                  <td className="py-3 px-3 font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                    <Truck className="w-4 h-4 text-zinc-400" />
+          <DataTable
+            title="Suppliers_List"
+            columns={[
+              {
+                key: "name",
+                label: "Supplier Name",
+                render: (s) => (
+                  <div className="font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                    <Truck className="w-4 h-4 text-zinc-400 shrink-0" />
                     <span>{s.name}</span>
-                  </td>
-                  <td className="py-3 px-3 font-mono text-zinc-700">{s.phone || "—"}</td>
-                  <td className="py-3 px-3 text-zinc-600 dark:text-zinc-400">
-                    {s.city ? `${s.city} ${s.address ? `(${s.address})` : ""}` : s.address || "—"}
-                  </td>
-                  <td className="py-3 px-3 text-zinc-600 font-medium">
-                    {s._count?.stockEntries || 0} entries
-                  </td>
-                  <td className="py-3 px-3 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        onClick={() => handleOpenModal(s)}
-                        className="p-1.5 rounded text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(s.id)}
-                        className="p-1.5 rounded text-red-500 hover:text-red-700 hover:bg-red-50"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                ),
+              },
+              {
+                key: "phone",
+                label: "Phone",
+                render: (s) => <span className="font-mono">{s.phone || "—"}</span>,
+              },
+              {
+                key: "cityAddress",
+                label: "City / Address",
+                render: (s) => (s.city ? `${s.city} ${s.address ? `(${s.address})` : ""}` : s.address || "—"),
+              },
+              {
+                key: "purchasesCount",
+                label: "Purchases",
+                render: (s) => `${s._count?.stockEntries || 0} entries`,
+              },
+              {
+                key: "actions",
+                label: "Actions",
+                sortable: false,
+                cellClassName: "text-right",
+                render: (s) => (
+                  <div className="flex items-center justify-end gap-1">
+                    <button
+                      onClick={() => handleOpenModal(s)}
+                      className="p-1.5 rounded text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 cursor-pointer"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(s.id)}
+                      className="p-1.5 rounded text-red-500 hover:text-red-700 hover:bg-red-50 cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ),
+              },
+            ]}
+            data={suppliers.map((s) => ({
+              ...s,
+              cityAddress: s.city ? `${s.city} ${s.address ? `(${s.address})` : ""}` : s.address || "",
+              purchasesCount: s._count?.stockEntries || 0,
+            }))}
+            searchKeys={["name", "phone", "city", "address"]}
+            dateKey="createdAt"
+            onDeleteSelected={async (ids) => {
+              for (const id of ids) {
+                await api.delete(`/suppliers/${id}`);
+              }
+              showToastSuccess(`Deleted ${ids.length} supplier profile(s)!`);
+              fetchSuppliers();
+            }}
+            enableSelection={true}
+            enableDateFilter={false}
+          />
         )}
       </Card>
 

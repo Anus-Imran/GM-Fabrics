@@ -69,11 +69,11 @@ export const getDashboardKpis = async (params = {}) => {
   // Net Revenue = Gross Sales Total - Returns Total
   const periodRevenue = Math.max(0, periodGrossSales - periodReturnsAmount);
 
-  // Calculate COGS in period
+  // Calculate exact COGS in period based on item purchase cost prices
   let periodCogs = 0;
   periodSales.forEach((s) => {
     s.saleItems.forEach((si) => {
-      const cost = si.product ? si.product.costPrice : 0;
+      const cost = (si.costPrice && si.costPrice > 0) ? si.costPrice : (si.product ? si.product.costPrice : 0);
       periodCogs += si.quantity * cost;
     });
   });
@@ -394,12 +394,11 @@ export const getProfitLossReport = async (month, year) => {
   const totalReturns = returnsAgg._sum.refundAmount || 0;
   const totalRevenue = Math.max(0, grossRevenue - totalReturns);
 
-  // 2. Cost of Goods Sold (COGS)
+  // 2. Cost of Goods Sold (COGS) based on exact FIFO item cost prices
   let cogs = 0;
   sales.forEach((s) => {
     s.saleItems.forEach((si) => {
-      // Use cost price snapshot or product cost price
-      const cost = si.product ? si.product.costPrice : 0;
+      const cost = (si.costPrice && si.costPrice > 0) ? si.costPrice : (si.product ? si.product.costPrice : 0);
       cogs += si.quantity * cost;
     });
   });

@@ -11,6 +11,7 @@ export const StockEntryModal = ({ isOpen, onClose, onSubmit, products = [], supp
   const [supplierId, setSupplierId] = useState("");
   const [quantity, setQuantity] = useState("");
   const [costPerUnit, setCostPerUnit] = useState("");
+  const [newSalePrice, setNewSalePrice] = useState("");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -21,6 +22,9 @@ export const StockEntryModal = ({ isOpen, onClose, onSubmit, products = [], supp
   const costVal = parseFloat(costPerUnit) || 0;
   const totalCost = qtyVal * costVal;
   const priceDiff = selectedProduct ? costVal - selectedProduct.costPrice : 0;
+  const effectiveSalePrice = newSalePrice ? parseFloat(newSalePrice) : (selectedProduct?.salePrice || 0);
+
+  const isLowMargin = selectedProduct && costVal > 0 && effectiveSalePrice > 0 && costVal >= effectiveSalePrice;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -38,6 +42,7 @@ export const StockEntryModal = ({ isOpen, onClose, onSubmit, products = [], supp
         supplierId: supplierId || null,
         quantity: qtyVal,
         costPerUnit: costVal,
+        newSalePrice: newSalePrice ? parseFloat(newSalePrice) : null,
         notes,
       });
       onClose();
@@ -63,7 +68,10 @@ export const StockEntryModal = ({ isOpen, onClose, onSubmit, products = [], supp
               const pId = e.target.value;
               setSelectedProductId(pId);
               const p = products.find((prod) => prod.id === parseInt(pId, 10));
-              if (p) setCostPerUnit(p.costPrice.toString());
+              if (p) {
+                setCostPerUnit(p.costPrice.toString());
+                setNewSalePrice(p.salePrice ? p.salePrice.toString() : "");
+              }
             }}
             required
             className="w-full text-xs p-2.5 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg font-bold"
@@ -82,6 +90,12 @@ export const StockEntryModal = ({ isOpen, onClose, onSubmit, products = [], supp
             <div className="flex justify-between">
               <span className="text-zinc-500">Current Cost Price:</span>
               <span className="font-bold">{formatCurrency(selectedProduct.costPrice)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-zinc-500">Current Retail Sale Price:</span>
+              <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                {formatCurrency(selectedProduct.salePrice)}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-zinc-500">Unit of Measure:</span>
@@ -119,7 +133,7 @@ export const StockEntryModal = ({ isOpen, onClose, onSubmit, products = [], supp
             required
           />
           <Input
-            label="Cost Price per Unit (PKR) *"
+            label="Vendor Cost / Unit (PKR) *"
             type="number"
             step="0.01"
             value={costPerUnit}
@@ -129,6 +143,31 @@ export const StockEntryModal = ({ isOpen, onClose, onSubmit, products = [], supp
           />
         </div>
 
+        <div>
+          <Input
+            label="New Retail Selling Price (PKR - Optional)"
+            type="number"
+            step="0.01"
+            value={newSalePrice}
+            onChange={(e) => setNewSalePrice(e.target.value)}
+            placeholder={selectedProduct?.salePrice ? selectedProduct.salePrice.toString() : "3500"}
+          />
+          <p className="text-[10px] text-zinc-500 mt-1">
+            If vendor purchase cost increased, enter a new retail price to update catalog selling rate.
+          </p>
+        </div>
+
+        {isLowMargin && (
+          <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-600 dark:text-amber-400 text-xs font-medium space-y-1">
+            <div className="font-bold flex items-center gap-1.5">
+              ⚠️ Zero / Negative Profit Margin Warning
+            </div>
+            <div>
+              Vendor cost price ({formatCurrency(costVal)}) is greater than or equal to Retail Sale Price ({formatCurrency(effectiveSalePrice)}). Consider setting a higher Retail Sale Price above.
+            </div>
+          </div>
+        )}
+
         {/* Calculation summary */}
         <div className="p-4 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 rounded-xl space-y-2">
           <div className="flex justify-between text-xs">
@@ -137,7 +176,7 @@ export const StockEntryModal = ({ isOpen, onClose, onSubmit, products = [], supp
           </div>
           {selectedProduct && costVal > 0 && (
             <div className="flex justify-between text-[11px] pt-1 border-t border-zinc-700 dark:border-zinc-300">
-              <span className="opacity-80">Price Change from Previous:</span>
+              <span className="opacity-80">Cost Change from Previous:</span>
               <span className="font-bold">
                 {priceDiff > 0 ? `+ PKR ${priceDiff} (Increased)` : priceDiff < 0 ? `- PKR ${Math.abs(priceDiff)} (Decreased)` : "No change"}
               </span>
@@ -149,7 +188,7 @@ export const StockEntryModal = ({ isOpen, onClose, onSubmit, products = [], supp
           label="Purchase Notes (Optional)"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="e.g. Seasonal price increase from vendor"
+          placeholder="e.g. Seasonal vendor price increase"
         />
 
         <div className="flex gap-3 pt-2">

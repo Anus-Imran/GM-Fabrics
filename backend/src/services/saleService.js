@@ -171,17 +171,7 @@ export const createSale = async (userId, data) => {
 
       // 5. Create SaleItems, Deduct Stock using FIFO, and Update Product Stock
       for (const item of preparedItems) {
-        await tx.saleItem.create({
-          data: {
-            saleId: sale.id,
-            productId: item.productId,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            subtotal: item.subtotal,
-          },
-        });
-
-        // Deduct quantity from oldest active stock batches (FIFO)
+        // Deduct quantity from oldest active stock batches (FIFO) & calculate exact COGS
         const batches = await tx.stockBatch.findMany({
           where: {
             productId: item.productId,
@@ -191,11 +181,13 @@ export const createSale = async (userId, data) => {
         });
 
         let remainingToDeduct = item.quantity;
+        let totalCostFromBatches = 0;
 
         for (const batch of batches) {
           if (remainingToDeduct <= 0) break;
 
           const takeFromThisBatch = Math.min(batch.remainingQuantity, remainingToDeduct);
+          totalCostFromBatches += takeFromThisBatch * batch.costPrice;
 
           await tx.stockBatch.update({
             where: { id: batch.id },
@@ -206,6 +198,23 @@ export const createSale = async (userId, data) => {
 
           remainingToDeduct -= takeFromThisBatch;
         }
+
+        if (remainingToDeduct > 0) {
+          totalCostFromBatches += remainingToDeduct * (item.product.costPrice || 0);
+        }
+
+        const effectiveCostPrice = item.quantity > 0 ? totalCostFromBatches / item.quantity : (item.product.costPrice || 0);
+
+        await tx.saleItem.create({
+          data: {
+            saleId: sale.id,
+            productId: item.productId,
+            quantity: item.quantity,
+            costPrice: effectiveCostPrice,
+            unitPrice: item.unitPrice,
+            subtotal: item.subtotal,
+          },
+        });
 
         const updatedStock = item.product.stockQuantity - item.quantity;
 

@@ -33,12 +33,13 @@ export const getStockEntryById = async (id) => {
 };
 
 export const createStockEntry = async (data) => {
-  const { productId, supplierId, quantity, costPerUnit, notes, purchasedAt } = data;
+  const { productId, supplierId, quantity, costPerUnit, newSalePrice, notes, purchasedAt } = data;
 
   const prodId = parseInt(productId, 10);
   const qty = parseFloat(quantity);
   const costUnit = parseFloat(costPerUnit);
   const totalCost = qty * costUnit;
+  const parsedNewSalePrice = newSalePrice ? parseFloat(newSalePrice) : null;
 
   if (qty <= 0) throw new Error("Quantity must be greater than zero");
   if (costUnit < 0) throw new Error("Cost per unit cannot be negative");
@@ -85,14 +86,20 @@ export const createStockEntry = async (data) => {
       },
     });
 
-    // 4. Update Product stock & latest cost price snapshot
+    // 4. Update Product stock, latest cost price snapshot, and optional new sale price
+    const updateProductData = {
+      stockQuantity: product.stockQuantity + qty,
+      costPrice: costUnit,
+      supplierId: supplierId ? parseInt(supplierId, 10) : product.supplierId,
+    };
+
+    if (parsedNewSalePrice && parsedNewSalePrice > 0) {
+      updateProductData.salePrice = parsedNewSalePrice;
+    }
+
     await tx.product.update({
       where: { id: prodId },
-      data: {
-        stockQuantity: product.stockQuantity + qty,
-        costPrice: costUnit,
-        supplierId: supplierId ? parseInt(supplierId, 10) : product.supplierId,
-      },
+      data: updateProductData,
     });
 
     return stockEntry;

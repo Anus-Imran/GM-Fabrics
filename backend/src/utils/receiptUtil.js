@@ -15,18 +15,36 @@ export const generateReceiptHtml = (sale) => {
   const isRefunded = sale.status === "REFUNDED" || totalRefunded >= sale.totalAmount;
   const isPartiallyRefunded = sale.status === "PARTIALLY_REFUNDED" || (totalRefunded > 0 && !isRefunded);
 
+  let totalItemSavings = 0;
+
   const itemsHtml = (sale.saleItems || [])
-    .map(
-      (item) => `
+    .map((item) => {
+      const origPrice = item.product?.salePrice || item.unitPrice;
+      const hasItemDiscount = origPrice > item.unitPrice;
+      const itemDiscPerUnit = hasItemDiscount ? origPrice - item.unitPrice : 0;
+      if (hasItemDiscount) {
+        totalItemSavings += itemDiscPerUnit * item.quantity;
+      }
+
+      return `
     <tr>
-      <td style="text-align: left; padding: 3px 0;">${item.product?.name || "Product"}</td>
-      <td style="text-align: center; padding: 3px 0;">${item.quantity} ${item.product?.unit?.symbol || ""}</td>
-      <td style="text-align: right; padding: 3px 0;">${item.unitPrice.toLocaleString()}</td>
-      <td style="text-align: right; padding: 3px 0;">${item.subtotal.toLocaleString()}</td>
+      <td style="text-align: left; padding: 3px 0;">
+        <strong>${item.product?.name || "Product"}</strong>
+        ${
+          hasItemDiscount
+            ? `<br><span style="font-size: 9px; color: #444; font-style: italic;">Orig: PKR ${origPrice.toLocaleString()} (Disc: -PKR ${itemDiscPerUnit.toLocaleString()}/unit)</span>`
+            : ""
+        }
+      </td>
+      <td style="text-align: center; padding: 3px 0; vertical-align: top;">${item.quantity} ${item.product?.unit?.symbol || ""}</td>
+      <td style="text-align: right; padding: 3px 0; vertical-align: top;">${item.unitPrice.toLocaleString()}</td>
+      <td style="text-align: right; padding: 3px 0; vertical-align: top;">${item.subtotal.toLocaleString()}</td>
     </tr>
-  `
-    )
+  `;
+    })
     .join("");
+
+  const combinedTotalSavings = totalItemSavings + (sale.discountAmount || 0);
 
   return `
 <!DOCTYPE html>
@@ -46,8 +64,8 @@ export const generateReceiptHtml = (sale) => {
       background: #fff;
     }
     .text-center { text-align: center; }
-    .text-right { text-align: right; }
-    .text-left { text-left: left; }
+    .text-right { text-right: right; }
+    .text-left { text-align: left; }
     .divider { border-top: 1px dashed #000; margin: 8px 0; }
     .double-divider { border-top: 2px double #000; margin: 8px 0; }
     .title { font-size: 16px; font-weight: bold; }
@@ -58,6 +76,7 @@ export const generateReceiptHtml = (sale) => {
     .bold { font-weight: bold; }
     .total-row { font-size: 14px; font-weight: bold; }
     .status-badge { text-align: center; font-weight: bold; margin: 4px 0; font-size: 11px; }
+    .savings-row { color: #15803d; font-weight: bold; font-size: 11px; }
   </style>
 </head>
 <body>
@@ -103,7 +122,12 @@ export const generateReceiptHtml = (sale) => {
   <div class="row"><span>Subtotal:</span><span>PKR ${sale.subtotal.toLocaleString()}</span></div>
   ${
     sale.discountAmount > 0
-      ? `<div class="row"><span>Discount:</span><span>- PKR ${sale.discountAmount.toLocaleString()}</span></div>`
+      ? `<div class="row"><span>Bill Discount:</span><span>- PKR ${sale.discountAmount.toLocaleString()}</span></div>`
+      : ""
+  }
+  ${
+    combinedTotalSavings > 0
+      ? `<div class="row savings-row"><span>YOU SAVED:</span><span>PKR ${combinedTotalSavings.toLocaleString()}</span></div>`
       : ""
   }
   

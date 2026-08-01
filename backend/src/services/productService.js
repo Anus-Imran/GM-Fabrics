@@ -54,6 +54,9 @@ export const getProductById = async (id) => {
         orderBy: { purchasedAt: "desc" },
         include: { supplier: true },
       },
+      stockBatches: {
+        orderBy: { createdAt: "desc" },
+      },
     },
   });
   if (!product) throw new Error("Product not found");
@@ -106,27 +109,46 @@ export const createProduct = async (data) => {
     if (existingBarcode) throw new Error("Barcode already exists");
   }
 
-  return prisma.product.create({
-    data: {
-      name,
-      sku: sku || null,
-      barcode: barcode || null,
-      description: description || null,
-      categoryId: parseInt(categoryId, 10),
-      brandId: brandId ? parseInt(brandId, 10) : null,
-      unitId: parseInt(unitId, 10),
-      supplierId: supplierId ? parseInt(supplierId, 10) : null,
-      costPrice: parseFloat(costPrice || 0),
-      salePrice: parseFloat(salePrice || 0),
-      stockQuantity: parseFloat(stockQuantity || 0),
-      lowStockAlert: parseFloat(lowStockAlert || 10),
-    },
-    include: {
-      category: true,
-      brand: true,
-      unit: true,
-      supplier: true,
-    },
+  const initialStock = parseFloat(stockQuantity || 0);
+  const cost = parseFloat(costPrice || 0);
+
+  return prisma.$transaction(async (tx) => {
+    const product = await tx.product.create({
+      data: {
+        name,
+        sku: sku || null,
+        barcode: barcode || null,
+        description: description || null,
+        categoryId: parseInt(categoryId, 10),
+        brandId: brandId ? parseInt(brandId, 10) : null,
+        unitId: parseInt(unitId, 10),
+        supplierId: supplierId ? parseInt(supplierId, 10) : null,
+        costPrice: cost,
+        salePrice: parseFloat(salePrice || 0),
+        stockQuantity: initialStock,
+        lowStockAlert: parseFloat(lowStockAlert || 10),
+      },
+      include: {
+        category: true,
+        brand: true,
+        unit: true,
+        supplier: true,
+        stockBatches: true,
+      },
+    });
+
+    if (initialStock > 0) {
+      await tx.stockBatch.create({
+        data: {
+          productId: product.id,
+          initialQuantity: initialStock,
+          remainingQuantity: initialStock,
+          costPrice: cost,
+        },
+      });
+    }
+
+    return product;
   });
 };
 

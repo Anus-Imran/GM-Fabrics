@@ -86,172 +86,204 @@ export const createSale = async (userId, data) => {
     throw new Error("Customer selection is required for CREDIT (Khata) payment");
   }
 
-  return prisma.$transaction(async (tx) => {
-    // 1. Calculate line item subtotals and check stock
-    let subtotal = 0;
-    const preparedItems = [];
+  return prisma.$transaction(
+    async (tx) => {
+      // 1. Calculate line item subtotals and check stock
+      let subtotal = 0;
+      const preparedItems = [];
 
-    for (const item of items) {
-      const prodId = parseInt(item.productId, 10);
-      const qty = parseFloat(item.quantity);
-      const price = parseFloat(item.unitPrice);
+      for (const item of items) {
+        const prodId = parseInt(item.productId, 10);
+        const qty = parseFloat(item.quantity);
+        const price = parseFloat(item.unitPrice);
 
-      if (isNaN(qty) || qty <= 0) {
-        throw new Error(`Invalid quantity for product ID ${prodId}`);
+        if (isNaN(qty) || qty <= 0) {
+          throw new Error(`Invalid quantity for product ID ${prodId}`);
+        }
+
+        const product = await tx.product.findUnique({
+          where: { id: prodId },
+          include: { unit: true },
+        });
+
+        if (!product || !product.isActive) {
+          throw new Error(`Product ID ${prodId} not found or inactive`);
+        }
+
+        if (product.stockQuantity < qty) {
+          throw new Error(
+            `Insufficient stock for "${product.name}". Available: ${product.stockQuantity} ${product.unit.name}, requested: ${qty}`
+          );
+        }
+
+        const itemSubtotal = qty * price;
+        subtotal += itemSubtotal;
+
+        preparedItems.push({
+          productId: prodId,
+          quantity: qty,
+          unitPrice: price,
+          subtotal: itemSubtotal,
+          product,
+        });
       }
 
-      const product = await tx.product.findUnique({
-        where: { id: prodId },
-        include: { unit: true },
-      });
+      // 2. Calculate discounts
+      let discVal = parseFloat(discountValue || 0);
+      let discountAmount = 0;
 
-      if (!product || !product.isActive) {
-        throw new Error(`Product ID ${prodId} not found or inactive`);
+      if (discountType === "PERCENTAGE" && discVal > 0) {
+        discountAmount = (subtotal * discVal) / 100;
+      } else if (discountType === "FLAT" && discVal > 0) {
+        discountAmount = Math.min(discVal, subtotal);
       }
 
-      if (product.stockQuantity < qty) {
-        throw new Error(
-          `Insufficient stock for "${product.name}". Available: ${product.stockQuantity} ${product.unit.name}, requested: ${qty}`
-        );
+      const totalAmount = Math.max(0, subtotal - discountAmount);
+
+      let amtPaid = parseFloat(amountPaid || 0);
+      if (payMethod === "CREDIT") {
+        amtPaid = 0; // Credit sale
       }
 
-      const itemSubtotal = qty * price;
-      subtotal += itemSubtotal;
+      const changeAmount = Math.max(0, amtPaid - totalAmount);
 
-      preparedItems.push({
-        productId: prodId,
-        quantity: qty,
-        unitPrice: price,
-        subtotal: itemSubtotal,
-        product,
-      });
-    }
+      // 3. Generate Sale Number
+      const saleNumber = await generateSaleNumber();
 
-    // 2. Calculate discounts
-    let discVal = parseFloat(discountValue || 0);
-    let discountAmount = 0;
-
-    if (discountType === "PERCENTAGE" && discVal > 0) {
-      discountAmount = (subtotal * discVal) / 100;
-    } else if (discountType === "FLAT" && discVal > 0) {
-      discountAmount = Math.min(discVal, subtotal);
-    }
-
-    const totalAmount = Math.max(0, subtotal - discountAmount);
-
-    let amtPaid = parseFloat(amountPaid || 0);
-    if (payMethod === "CREDIT") {
-      amtPaid = 0; // Credit sale
-    }
-
-    const changeAmount = Math.max(0, amtPaid - totalAmount);
-
-    // 3. Generate Sale Number
-    const saleNumber = await generateSaleNumber();
-
-    // 4. Create Sale Record
-    const sale = await tx.sale.create({
-      data: {
-        saleNumber,
-        customerId: custId,
-        userId,
-        subtotal,
-        discountType: discountType || null,
-        discountValue: discVal,
-        discountAmount,
-        totalAmount,
-        paymentMethod: payMethod,
-        amountPaid: amtPaid,
-        changeAmount,
-        status: "COMPLETED",
-        notes: notes || null,
-      },
-    });
-
-    // 5. Create SaleItems and Decrement Stock
-    for (const item of preparedItems) {
-      await tx.saleItem.create({
+      // 4. Create Sale Record
+      const sale = await tx.sale.create({
         data: {
-          saleId: sale.id,
-          productId: item.productId,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          subtotal: item.subtotal,
+          saleNumber,
+          customerId: custId,
+          userId,
+          subtotal,
+          discountType: discountType || null,
+          discountValue: discVal,
+          discountAmount,
+          totalAmount,
+          paymentMethod: payMethod,
+          amountPaid: amtPaid,
+          changeAmount,
+          status: "COMPLETED",
+          notes: notes || null,
         },
       });
 
-      const updatedStock = item.product.stockQuantity - item.quantity;
-
-      await tx.product.update({
-        where: { id: item.productId },
-        data: { stockQuantity: updatedStock },
-      });
-
-      // Check low stock alert trigger
-      if (updatedStock <= item.product.lowStockAlert) {
-        await tx.notification.create({
+      // 5. Create SaleItems, Deduct Stock using FIFO, and Update Product Stock
+      for (const item of preparedItems) {
+        await tx.saleItem.create({
           data: {
-            type: "LOW_STOCK",
-            title: `Low Stock Alert: ${item.product.name}`,
-            message: `Current stock of ${item.product.name} is ${updatedStock} ${item.product.unit.symbol || item.product.unit.name}. Low stock threshold is ${item.product.lowStockAlert}.`,
-            metadata: {
-              productId: item.productId,
-              currentStock: updatedStock,
-              threshold: item.product.lowStockAlert,
+            saleId: sale.id,
+            productId: item.productId,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            subtotal: item.subtotal,
+          },
+        });
+
+        // Deduct quantity from oldest active stock batches (FIFO)
+        const batches = await tx.stockBatch.findMany({
+          where: {
+            productId: item.productId,
+            remainingQuantity: { gt: 0 },
+          },
+          orderBy: { createdAt: "asc" },
+        });
+
+        let remainingToDeduct = item.quantity;
+
+        for (const batch of batches) {
+          if (remainingToDeduct <= 0) break;
+
+          const takeFromThisBatch = Math.min(batch.remainingQuantity, remainingToDeduct);
+
+          await tx.stockBatch.update({
+            where: { id: batch.id },
+            data: {
+              remainingQuantity: batch.remainingQuantity - takeFromThisBatch,
+            },
+          });
+
+          remainingToDeduct -= takeFromThisBatch;
+        }
+
+        const updatedStock = item.product.stockQuantity - item.quantity;
+
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { stockQuantity: updatedStock },
+        });
+
+        // Check low stock alert trigger
+        if (updatedStock <= item.product.lowStockAlert) {
+          await tx.notification.create({
+            data: {
+              type: "LOW_STOCK",
+              title: `Low Stock Alert: ${item.product.name}`,
+              message: `Current stock of ${item.product.name} is ${updatedStock} ${item.product.unit.symbol || item.product.unit.name}. Low stock threshold is ${item.product.lowStockAlert}.`,
+              metadata: {
+                productId: item.productId,
+                currentStock: updatedStock,
+                threshold: item.product.lowStockAlert,
+              },
+            },
+          });
+        }
+      }
+
+      // 6. Update Customer Khata balance if CREDIT sale
+      if (payMethod === "CREDIT" && custId) {
+        const customer = await tx.customer.findUnique({ where: { id: custId } });
+        if (customer) {
+          await tx.customer.update({
+            where: { id: custId },
+            data: {
+              outstandingBalance: customer.outstandingBalance + totalAmount,
+            },
+          });
+        }
+      }
+
+      // 7. Fetch full sale with relations to generate Receipt
+      const fullSale = await tx.sale.findUnique({
+        where: { id: sale.id },
+        include: {
+          customer: true,
+          user: { select: { id: true, name: true } },
+          saleItems: {
+            include: {
+              product: { include: { unit: true } },
             },
           },
-        });
-      }
-    }
-
-    // 6. Update Customer Khata balance if CREDIT sale
-    if (payMethod === "CREDIT" && custId) {
-      const customer = await tx.customer.findUnique({ where: { id: custId } });
-      if (customer) {
-        await tx.customer.update({
-          where: { id: custId },
-          data: {
-            outstandingBalance: customer.outstandingBalance + totalAmount,
-          },
-        });
-      }
-    }
-
-    // 7. Fetch full sale with relations to generate Receipt
-    const fullSale = await tx.sale.findUnique({
-      where: { id: sale.id },
-      include: {
-        customer: true,
-        user: { select: { id: true, name: true } },
-        saleItems: {
-          include: {
-            product: { include: { unit: true } },
-          },
         },
-      },
-    });
+      });
 
-    const receiptHtml = generateReceiptHtml(fullSale);
+      const receiptHtml = generateReceiptHtml(fullSale);
 
-    await tx.receipt.create({
-      data: {
-        saleId: sale.id,
-        receiptHtml,
-      },
-    });
-
-    return tx.sale.findUnique({
-      where: { id: sale.id },
-      include: {
-        customer: true,
-        user: { select: { id: true, name: true } },
-        saleItems: {
-          include: { product: { include: { unit: true } } },
+      await tx.receipt.create({
+        data: {
+          saleId: sale.id,
+          receiptHtml,
         },
-        receipt: true,
-      },
-    });
-  });
+      });
+
+      return tx.sale.findUnique({
+        where: { id: sale.id },
+        include: {
+          customer: true,
+          user: { select: { id: true, name: true } },
+          saleItems: {
+            include: { product: { include: { unit: true } } },
+          },
+          receipt: true,
+        },
+      });
+    },
+    {
+      maxWait: 10000,
+      timeout: 30000,
+    }
+  );
 };
 
 export const updateSaleStatus = async (id, status) => {

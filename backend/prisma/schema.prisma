@@ -108,6 +108,7 @@ model Product {
   isActive      Boolean      @default(true)
 
   stockEntries  StockEntry[]
+  stockBatches  StockBatch[]
   saleItems     SaleItem[]
   returnItems   ReturnItem[]
   createdAt     DateTime     @default(now())
@@ -116,12 +117,12 @@ model Product {
 
 // 7. Stock Entries (Inventory Purchases & Price Change Tracking)
 model StockEntry {
-  id                  Int       @id @default(autoincrement())
+  id                  Int          @id @default(autoincrement())
   productId           Int
-  product             Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product             Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   supplierId          Int?
-  supplier            Supplier? @relation(fields: [supplierId], references: [id])
+  supplier            Supplier?    @relation(fields: [supplierId], references: [id])
 
   quantity            Float
   costPerUnit         Float
@@ -131,8 +132,25 @@ model StockEntry {
   priceDiff           Float?
 
   notes               String?
-  purchasedAt         DateTime  @default(now())
-  createdAt           DateTime  @default(now())
+  purchasedAt         DateTime     @default(now())
+  createdAt           DateTime     @default(now())
+  stockBatches        StockBatch[]
+}
+
+// 7.1 Stock Batches (FIFO Inventory Lot Tracking)
+model StockBatch {
+  id                Int         @id @default(autoincrement())
+  productId         Int
+  product           Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  stockEntryId      Int?
+  stockEntry        StockEntry? @relation(fields: [stockEntryId], references: [id], onDelete: SetNull)
+
+  initialQuantity   Float
+  remainingQuantity Float
+  costPrice         Float
+
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
 }
 
 // 8. Customers

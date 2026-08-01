@@ -93,5 +93,8 @@ export const settleCustomerBalance = async (id, { amount, notes }) => {
     });
 
     return updatedCustomer;
+  }, {
+    maxWait: 10000,
+    timeout: 30000,
   });
 };

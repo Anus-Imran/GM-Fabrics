@@ -97,6 +97,21 @@ export const createReturn = async (data) => {
             stockQuantity: { increment: item.quantity },
           },
         });
+
+        // Increment remainingQuantity on the latest batch for this product
+        const latestBatch = await tx.stockBatch.findFirst({
+          where: { productId: item.productId },
+          orderBy: { createdAt: "desc" },
+        });
+
+        if (latestBatch) {
+          await tx.stockBatch.update({
+            where: { id: latestBatch.id },
+            data: {
+              remainingQuantity: { increment: item.quantity },
+            },
+          });
+        }
       }
     }
 
@@ -146,6 +161,9 @@ export const createReturn = async (data) => {
         sale: { select: { saleNumber: true, createdAt: true, customer: true } },
       },
     });
+  }, {
+    maxWait: 10000,
+    timeout: 30000,
   });
 };
 
@@ -275,6 +293,9 @@ export const deleteReturn = async (id) => {
     });
 
     return { id: returnId };
+  }, {
+    maxWait: 10000,
+    timeout: 30000,
   });
 };
 

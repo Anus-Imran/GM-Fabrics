@@ -73,7 +73,19 @@ export const createStockEntry = async (data) => {
       },
     });
 
-    // 3. Update Product stock & latest cost price
+    // 3. Create independent StockBatch for this purchase lot
+    await tx.stockBatch.create({
+      data: {
+        productId: prodId,
+        stockEntryId: stockEntry.id,
+        initialQuantity: qty,
+        remainingQuantity: qty,
+        costPrice: costUnit,
+        createdAt: purchasedAt ? new Date(purchasedAt) : new Date(),
+      },
+    });
+
+    // 4. Update Product stock & latest cost price snapshot
     await tx.product.update({
       where: { id: prodId },
       data: {
@@ -84,5 +96,8 @@ export const createStockEntry = async (data) => {
     });
 
     return stockEntry;
+  }, {
+    maxWait: 10000,
+    timeout: 30000,
   });
 };

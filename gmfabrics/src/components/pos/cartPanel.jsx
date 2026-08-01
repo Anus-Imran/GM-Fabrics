@@ -105,8 +105,8 @@ export const CartPanel = ({ customers = [], onOpenCheckout }) => {
                   </button>
                 </div>
 
-                {/* Editable Inputs: Qty & Custom Rate */}
-                <div className="grid grid-cols-2 gap-2 pt-1">
+                {/* Editable Inputs: Qty, Item Discount, and Net Sold Rate */}
+                <div className="grid grid-cols-3 gap-1.5 pt-1">
                   {/* Quantity Input */}
                   <div>
                     <label className="block text-[9px] font-semibold text-zinc-500 uppercase mb-0.5">
@@ -118,21 +118,40 @@ export const CartPanel = ({ customers = [], onOpenCheckout }) => {
                       min="0.01"
                       value={item.quantity}
                       onChange={(e) => updateQuantity(item.product.id, e.target.value)}
-                      className="w-full px-2 py-1 text-xs font-bold bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded text-zinc-900 dark:text-zinc-100 focus:ring-1 focus:ring-zinc-900"
+                      className="w-full px-1.5 py-1 text-xs font-bold bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded text-zinc-900 dark:text-zinc-100 focus:ring-1 focus:ring-zinc-900 text-center"
                     />
                   </div>
 
-                  {/* Bargained / Custom Rate Input */}
+                  {/* Item Discount (PKR/unit) Input */}
+                  <div>
+                    <label className="block text-[9px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase mb-0.5">
+                      Disc / Unit (PKR)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={Math.max(0, item.product.salePrice - item.unitPrice)}
+                      onChange={(e) => {
+                        const disc = parseFloat(e.target.value) || 0;
+                        const newRate = Math.max(0, item.product.salePrice - disc);
+                        updateUnitPrice(item.product.id, newRate);
+                      }}
+                      className="w-full px-1.5 py-1 text-xs font-bold bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700 rounded text-emerald-700 dark:text-emerald-300 focus:ring-1 focus:ring-emerald-500 text-center"
+                    />
+                  </div>
+
+                  {/* Net Sold Rate (PKR/unit) Input */}
                   <div>
                     <label className="block text-[9px] font-semibold text-zinc-500 uppercase mb-0.5">
-                      Sold Rate / {item.product.unit?.symbol || "unit"} (PKR)
+                      Net Rate (PKR)
                     </label>
                     <input
                       type="number"
                       min="0"
                       value={item.unitPrice}
                       onChange={(e) => updateUnitPrice(item.product.id, e.target.value)}
-                      className="w-full px-2 py-1 text-xs font-bold bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded text-zinc-900 dark:text-zinc-100 focus:ring-1 focus:ring-emerald-500"
+                      className="w-full px-1.5 py-1 text-xs font-bold bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded text-zinc-900 dark:text-zinc-100 focus:ring-1 focus:ring-zinc-900 text-center"
                     />
                   </div>
                 </div>
@@ -141,14 +160,14 @@ export const CartPanel = ({ customers = [], onOpenCheckout }) => {
                   <div>
                     {hasCustomDiscount ? (
                       <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-                        Item Disc: -{formatCurrency(diffPerUnit)}/unit
+                        Item Disc Applied: -{formatCurrency(diffPerUnit)}/unit
                       </span>
                     ) : item.unitPrice > item.product.salePrice ? (
                       <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
                         Premium Rate: +{formatCurrency(item.unitPrice - item.product.salePrice)}
                       </span>
                     ) : (
-                      <span className="text-[10px] text-zinc-400">Standard Catalog Rate</span>
+                      <span className="text-[10px] text-zinc-400">Catalog Rate: {formatCurrency(item.product.salePrice)}</span>
                     )}
                   </div>
                   <div className="text-right font-extrabold text-zinc-900 dark:text-zinc-100">

@@ -70,9 +70,7 @@ export const CartPanel = ({ customers = [], onOpenCheckout }) => {
             </option>
           ))}
         </select>
-      </div>
-
-      {/* Line Items List */}
+      </div>      {/* Line Items List */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {items.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center text-zinc-400">
@@ -81,52 +79,85 @@ export const CartPanel = ({ customers = [], onOpenCheckout }) => {
             <p className="text-[11px] text-zinc-400 mt-0.5">Click products to add to current bill</p>
           </div>
         ) : (
-          items.map((item) => (
-            <div
-              key={item.product.id}
-              className="bg-zinc-50 dark:bg-zinc-800/40 p-3 rounded-lg border border-zinc-100 dark:border-zinc-800 flex flex-col gap-2"
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <h5 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 leading-tight">
-                    {item.product.name}
-                  </h5>
-                  <p className="text-[10px] text-zinc-500 mt-0.5">
-                    {item.product.category?.name} • Unit: {item.product.unit?.name}
-                  </p>
-                </div>
-                <button
-                  onClick={() => removeFromCart(item.product.id)}
-                  className="text-zinc-400 hover:text-red-600 transition-colors p-1"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
+          items.map((item) => {
+            const hasCustomDiscount = item.unitPrice < item.product.salePrice;
+            const diffPerUnit = item.product.salePrice - item.unitPrice;
 
-              <div className="flex items-center justify-between pt-1">
-                {/* Quantity Controls */}
-                <div className="flex items-center border border-zinc-200 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-900 overflow-hidden">
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    value={item.quantity}
-                    onChange={(e) => updateQuantity(item.product.id, e.target.value)}
-                    className="w-16 px-2 py-1 text-xs text-center border-none font-bold text-zinc-900 dark:text-zinc-100 focus:outline-none"
-                  />
-                  <span className="text-[10px] pr-2 text-zinc-400">{item.product.unit?.symbol || ""}</span>
+            return (
+              <div
+                key={item.product.id}
+                className="bg-zinc-50 dark:bg-zinc-800/40 p-3 rounded-lg border border-zinc-100 dark:border-zinc-800 flex flex-col gap-2"
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h5 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 leading-tight">
+                      {item.product.name}
+                    </h5>
+                    <p className="text-[10px] text-zinc-500 mt-0.5">
+                      {item.product.category?.name} • Catalog Price: {formatCurrency(item.product.salePrice)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => removeFromCart(item.product.id)}
+                    className="text-zinc-400 hover:text-red-600 transition-colors p-1"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
 
-                {/* Subtotal */}
-                <div className="text-right">
-                  <p className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                {/* Editable Inputs: Qty & Custom Rate */}
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  {/* Quantity Input */}
+                  <div>
+                    <label className="block text-[9px] font-semibold text-zinc-500 uppercase mb-0.5">
+                      Qty ({item.product.unit?.symbol || "unit"})
+                    </label>
+                    <input
+                      type="number"
+                      step={item.product.unit?.allowDecimal !== false ? "0.01" : "1"}
+                      min="0.01"
+                      value={item.quantity}
+                      onChange={(e) => updateQuantity(item.product.id, e.target.value)}
+                      className="w-full px-2 py-1 text-xs font-bold bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded text-zinc-900 dark:text-zinc-100 focus:ring-1 focus:ring-zinc-900"
+                    />
+                  </div>
+
+                  {/* Bargained / Custom Rate Input */}
+                  <div>
+                    <label className="block text-[9px] font-semibold text-zinc-500 uppercase mb-0.5">
+                      Sold Rate / {item.product.unit?.symbol || "unit"} (PKR)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={item.unitPrice}
+                      onChange={(e) => updateUnitPrice(item.product.id, e.target.value)}
+                      className="w-full px-2 py-1 text-xs font-bold bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded text-zinc-900 dark:text-zinc-100 focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1 border-t border-zinc-200/50 dark:border-zinc-800/50 text-xs">
+                  <div>
+                    {hasCustomDiscount ? (
+                      <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                        Item Disc: -{formatCurrency(diffPerUnit)}/unit
+                      </span>
+                    ) : item.unitPrice > item.product.salePrice ? (
+                      <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                        Premium Rate: +{formatCurrency(item.unitPrice - item.product.salePrice)}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-zinc-400">Standard Catalog Rate</span>
+                    )}
+                  </div>
+                  <div className="text-right font-extrabold text-zinc-900 dark:text-zinc-100">
                     {formatCurrency(item.subtotal)}
-                  </p>
-                  <p className="text-[10px] text-zinc-400">@ {formatCurrency(item.unitPrice)}</p>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 

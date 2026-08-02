@@ -238,7 +238,7 @@ export const DataTable = ({
                   }}
                   className="text-xs py-2 pl-8 pr-7 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-bold appearance-none cursor-pointer focus:outline-none"
                 >
-                  <option value="all">📅 All Dates</option>
+                  <option value="all">All Dates</option>
                   <option value="today">Today</option>
                   <option value="7days">Last 7 Days</option>
                   <option value="this_month">This Month</option>

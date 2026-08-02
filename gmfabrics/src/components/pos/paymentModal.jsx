@@ -143,7 +143,7 @@ export const PaymentModal = ({ isOpen, onClose, onSaleSuccess }) => {
                 className="w-full text-xs p-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none"
               />
               <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
-                ✨ Customer will be automatically created in database upon sale completion.
+                Customer will be automatically created in database upon sale completion.
               </p>
             </div>
           ) : (

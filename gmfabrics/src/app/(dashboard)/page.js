@@ -122,7 +122,7 @@ export default function DashboardPage() {
             </div>
 
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-              {getGreetingTime()}, {user?.name || "Shop Admin"} 👋
+              {getGreetingTime()}, {user?.name || "Shop Admin"}
             </h1>
 
             <p className="text-xs sm:text-sm text-zinc-400 leading-relaxed">
@@ -462,7 +462,7 @@ export default function DashboardPage() {
             <div className="space-y-2.5">
               {!data?.lowStockProducts || data.lowStockProducts.length === 0 ? (
                 <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold py-4 text-center">
-                  ✓ Inventory stock levels are healthy.
+                  Inventory stock levels are healthy.
                 </p>
               ) : (
                 data.lowStockProducts.map((p) => (

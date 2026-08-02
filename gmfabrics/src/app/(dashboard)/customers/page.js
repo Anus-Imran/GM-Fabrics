@@ -91,22 +91,11 @@ export default function CustomersPage() {
       />
 
       <Card>
-        <div className="mb-4 relative w-72">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by customer name or phone..."
-            className="w-full pl-9 pr-4 py-2 text-xs bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:outline-none"
-          />
-        </div>
-
         {loading ? (
           <Loader text="Loading customer khata accounts..." />
         ) : (
           <CustomerTable
-            customers={filtered}
+            customers={customers}
             onEdit={(cust) => {
               setEditingCustomer(cust);
               setShowCustomerModal(true);

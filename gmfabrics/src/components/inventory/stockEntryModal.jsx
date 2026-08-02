@@ -162,7 +162,7 @@ export const StockEntryModal = ({ isOpen, onClose, onSubmit, products = [], supp
         {isLowMargin && (
           <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-600 dark:text-amber-400 text-xs font-medium space-y-1">
             <div className="font-bold flex items-center gap-1.5">
-              ⚠️ Zero / Negative Profit Margin Warning
+              Zero / Negative Profit Margin Warning
             </div>
             <div>
               Vendor cost price ({formatCurrency(costVal)}) is greater than or equal to Retail Sale Price ({formatCurrency(effectiveSalePrice)}). Consider setting a higher Retail Sale Price above.

@@ -7,11 +7,11 @@ import {
   toggleNoteStatus,
   deleteNote,
 } from "../controllers/noteController.js";
-import { authenticateToken } from "../middleware/authMiddleware.js";
+import { authenticateUser } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-router.use(authenticateToken);
+router.use(authenticateUser);
 
 router.get("/", getNotes);
 router.get("/:id", getNote);

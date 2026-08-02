@@ -1,17 +1,25 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import pg from "pg";
 
-// Global Prisma singleton to prevent connection leaks during serverless hot-reloads
-const globalForPrisma = globalThis;
+const connectionString = process.env.DATABASE_URL;
 
-export const prisma =
-  globalForPrisma.prisma ||
-  new PrismaClient({
-    log: process.env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
-  });
+const isRemote =
+  connectionString &&
+  !connectionString.includes("localhost") &&
+  !connectionString.includes("127.0.0.1");
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-}
+const pool = new pg.Pool({
+  connectionString,
+  ssl: isRemote ? { rejectUnauthorized: false } : false,
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+});
+
+const adapter = new PrismaPg(pool);
+
+export const prisma = new PrismaClient({ adapter });
 
 export default prisma;

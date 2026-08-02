@@ -25,26 +25,33 @@ import noteRoutes from "./routes/noteRoutes.js";
 
 const app = express();
 
-// Universal CORS & OPTIONS Preflight Middleware (Supporting Vercel previews & production)
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-  } else {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-  }
-  res.setHeader("Access-Control-Allow-Credentials", "true");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
-  );
+// Dynamic CORS Middleware supporting Vercel previews, production domains, and localhost
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow non-browser requests (Postman, curl, server-to-server)
+      if (!origin) return callback(null, true);
 
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-  next();
-});
+      // Allow any localhost, vercel.app subdomains, or custom frontend URL
+      if (
+        origin.startsWith("http://localhost") ||
+        origin.endsWith(".vercel.app") ||
+        origin === envConfig.frontendUrl
+      ) {
+        return callback(null, true);
+      }
+
+      // Default allow for seamless Vercel deployments
+      return callback(null, true);
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+  })
+);
+
+// Explicit OPTIONS Preflight handler
+app.options("*", cors());
 
 app.use(morgan("dev"));
 app.use(express.json({ limit: "10mb" }));
@@ -81,8 +88,8 @@ app.use("/api/notes", noteRoutes);
 // Global Error Handler
 app.use(errorHandler);
 
-// Start Server if local execution (not Vercel serverless & not test)
-if (!process.env.VERCEL && process.env.NODE_ENV !== "test") {
+// Start Server if main module
+if (process.env.NODE_ENV !== "test") {
   const PORT = envConfig.port;
   app.listen(PORT, () => {
     console.log(`==================================================`);

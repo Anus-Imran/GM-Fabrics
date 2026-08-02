@@ -9,6 +9,7 @@ import { Input } from "../../../components/common/input.jsx";
 import { Plus, Edit2, Trash2, Truck } from "lucide-react";
 import { showToastSuccess, showToastError, confirmDelete } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
+import { DataTable } from "../../../components/common/dataTable.jsx";
 
 export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState([]);

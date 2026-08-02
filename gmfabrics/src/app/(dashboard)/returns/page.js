@@ -13,6 +13,7 @@ import { formatCurrency } from "../../../utils/formatCurrency.js";
 import { formatDateTime } from "../../../utils/formatDate.js";
 import { showToastSuccess, showToastError, confirmAction } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
+import { DataTable } from "../../../components/common/dataTable.jsx";
 
 function ReturnsContent() {
   const searchParams = useSearchParams();

@@ -97,11 +97,15 @@ export const getDashboardKpis = async (params = {}) => {
   let totalStockValue = 0;
   let totalStockItems = 0;
 
-  activeBatches.forEach((b) => {
-    const cost = b.costPrice ?? b.costPerUnit ?? 0;
-    totalStockValue += b.remainingQuantity * cost;
-    totalStockItems += b.remainingQuantity;
-  });
+  for (const b of activeBatches) {
+    let cost = Number(b.costPrice || b.costPerUnit || b.cost || 0);
+    if (!cost && b.productId) {
+      const prod = await prisma.product.findUnique({ where: { id: b.productId } });
+      cost = Number(prod?.costPrice || 0);
+    }
+    totalStockValue += (b.remainingQuantity || 0) * cost;
+    totalStockItems += (b.remainingQuantity || 0);
+  }
 
   const productsWithStock = await prisma.product.findMany({
     where: { isActive: true, stockQuantity: { gt: 0 } },
@@ -110,8 +114,8 @@ export const getDashboardKpis = async (params = {}) => {
 
   productsWithStock.forEach((p) => {
     if (!p.stockBatches || p.stockBatches.length === 0) {
-      totalStockValue += p.stockQuantity * (p.costPrice || 0);
-      totalStockItems += p.stockQuantity;
+      totalStockValue += (p.stockQuantity || 0) * Number(p.costPrice || 0);
+      totalStockItems += (p.stockQuantity || 0);
     }
   });
 

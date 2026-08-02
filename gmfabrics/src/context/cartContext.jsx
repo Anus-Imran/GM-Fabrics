@@ -6,7 +6,7 @@ const CartContext = createContext();
 
 export const CartProvider = ({ children }) => {
   const [items, setItems] = useState([]);
-  // Line item structure:
+  // Cart Line Item Schema:
   // {
   //   cartItemId: string (e.g. "6_batch_15"),
   //   product: object,
@@ -14,7 +14,7 @@ export const CartProvider = ({ children }) => {
   //   batchLabel: string,
   //   basePrice: number,
   //   quantity: number,
-  //   customDiscount: number, // Manual discount per unit typed by cashier
+  //   customDiscount: number, // Manual discount per unit entered by cashier
   //   unitPrice: number,       // basePrice - customDiscount
   //   subtotal: number,
   // }
@@ -31,23 +31,19 @@ export const CartProvider = ({ children }) => {
     const initialQty = isDecimalAllowed ? parseFloat(quantity) : Math.round(parseFloat(quantity));
 
     setItems((prevItems) => {
-      // Find existing total quantity for this product in cart
       const existingProductItems = prevItems.filter((i) => i.product.id === product.id);
       const existingTotalQty = existingProductItems.reduce((sum, i) => sum + i.quantity, 0);
 
       let newTotalQty = existingTotalQty + initialQty;
       if (!isDecimalAllowed) newTotalQty = Math.round(newTotalQty);
 
-      // Active batches sorted FIFO (oldest first)
       const activeBatches = (product.stockBatches || [])
         .filter((b) => b.remainingQuantity > 0)
         .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
-      // Non-product items preserved
       const otherItems = prevItems.filter((i) => i.product.id !== product.id);
 
       if (activeBatches.length === 0) {
-        // Fallback if no active batches recorded
         const basePrice = Math.round(product.salePrice || 0);
         const existingDefault = existingProductItems.find((i) => i.cartItemId === `${product.id}_default`);
         const disc = existingDefault ? existingDefault.customDiscount : 0;
@@ -70,7 +66,6 @@ export const CartProvider = ({ children }) => {
         ];
       }
 
-      // Perform FIFO allocation per batch
       let remainingToAllocate = newTotalQty;
       const allocatedItems = [];
 
@@ -102,7 +97,6 @@ export const CartProvider = ({ children }) => {
       }
 
       if (remainingToAllocate > 0) {
-        // Fallback for excess quantity over available batch stock
         const basePrice = Math.round(product.salePrice || 0);
         const cartItemId = `${product.id}_excess`;
         const existingExcess = existingProductItems.find((i) => i.cartItemId === cartItemId);
@@ -134,25 +128,89 @@ export const CartProvider = ({ children }) => {
       return;
     }
 
-    setItems((prevItems) =>
-      prevItems.map((item) => {
-        if (item.cartItemId === cartItemId) {
-          const isDecimalAllowed = item.product.unit?.allowDecimal !== false;
-          if (!isDecimalAllowed) qty = Math.round(qty);
+    setItems((prevItems) => {
+      const targetItem = prevItems.find((i) => i.cartItemId === cartItemId);
+      if (!targetItem) return prevItems;
 
-          const uPrice = Math.max(0, item.basePrice - item.customDiscount);
-          const subtotal = Math.round(qty * uPrice);
+      const product = targetItem.product;
+      const isDecimalAllowed = product.unit?.allowDecimal !== false;
+      if (!isDecimalAllowed) qty = Math.round(qty);
 
-          return {
-            ...item,
+      const otherItemsOfProduct = prevItems.filter((i) => i.product.id === product.id && i.cartItemId !== cartItemId);
+      const totalOtherQty = otherItemsOfProduct.reduce((sum, i) => sum + i.quantity, 0);
+      const desiredTotalQty = totalOtherQty + qty;
+
+      const activeBatches = (product.stockBatches || [])
+        .filter((b) => b.remainingQuantity > 0)
+        .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+      const otherProductItems = prevItems.filter((i) => i.product.id !== product.id);
+
+      if (activeBatches.length === 0) {
+        const basePrice = Math.round(product.salePrice || 0);
+        const uPrice = Math.max(0, basePrice - targetItem.customDiscount);
+        return [
+          ...otherProductItems,
+          {
+            ...targetItem,
             quantity: qty,
             unitPrice: uPrice,
-            subtotal,
-          };
-        }
-        return item;
-      })
-    );
+            subtotal: Math.round(qty * uPrice),
+          },
+        ];
+      }
+
+      let remainingToAllocate = desiredTotalQty;
+      const allocatedItems = [];
+
+      for (let idx = 0; idx < activeBatches.length; idx++) {
+        if (remainingToAllocate <= 0) break;
+        const b = activeBatches[idx];
+        const take = Math.min(b.remainingQuantity, remainingToAllocate);
+        const basePrice = Math.round(b.sellingPrice > 0 ? b.sellingPrice : (product.salePrice || 0));
+        const cItemId = `${product.id}_batch_${b.id}`;
+
+        const existingItem = prevItems.find((i) => i.cartItemId === cItemId);
+        const disc = existingItem ? existingItem.customDiscount : 0;
+        const uPrice = Math.max(0, basePrice - disc);
+
+        allocatedItems.push({
+          cartItemId: cItemId,
+          product,
+          batch: b,
+          batchLabel: `Lot #${b.id}`,
+          basePrice,
+          quantity: take,
+          customDiscount: disc,
+          unitPrice: uPrice,
+          subtotal: Math.round(take * uPrice),
+        });
+
+        remainingToAllocate -= take;
+      }
+
+      if (remainingToAllocate > 0) {
+        const basePrice = Math.round(product.salePrice || 0);
+        const cItemId = `${product.id}_excess`;
+        const existingExcess = prevItems.find((i) => i.cartItemId === cItemId);
+        const disc = existingExcess ? existingExcess.customDiscount : 0;
+        const uPrice = Math.max(0, basePrice - disc);
+
+        allocatedItems.push({
+          cartItemId: cItemId,
+          product,
+          batch: null,
+          batchLabel: "Excess Stock",
+          basePrice,
+          quantity: remainingToAllocate,
+          customDiscount: disc,
+          unitPrice: uPrice,
+          subtotal: Math.round(remainingToAllocate * uPrice),
+        });
+      }
+
+      return [...otherProductItems, ...allocatedItems];
+    });
   };
 
   const updateCustomDiscount = (cartItemId, discountPerUnit) => {

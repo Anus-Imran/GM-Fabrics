@@ -39,7 +39,7 @@ import { Loader } from "../../components/common/loader.jsx";
 export default function DashboardPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState("7days");
+  const [period, setPeriod] = useState("all_time");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const { user } = useAuth();

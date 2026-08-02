@@ -6,10 +6,11 @@ import { PageHeader } from "../../../components/common/pageHeader.jsx";
 import { Card } from "../../../components/common/card.jsx";
 import { Badge } from "../../../components/common/badge.jsx";
 import { DataTable } from "../../../components/common/dataTable.jsx";
+import { Loader } from "../../../components/common/loader.jsx";
 import { ReceiptModal } from "../../../components/pos/receiptModal.jsx";
 import { formatCurrency } from "../../../utils/formatCurrency.js";
 import { formatDateTime } from "../../../utils/formatDate.js";
-import { Printer, RotateCcw } from "lucide-react";
+import { Printer, RotateCcw, ShoppingBag } from "lucide-react";
 import api from "../../../services/apiService.js";
 
 export default function SalesPage() {
@@ -148,7 +149,7 @@ export default function SalesPage() {
 
       <Card>
         {loading ? (
-          <div className="py-8 text-center text-xs text-zinc-400">Loading sales history...</div>
+          <Loader text="Loading sales & transaction history..." icon={ShoppingBag} />
         ) : (
           <DataTable
             title="Sales_History"

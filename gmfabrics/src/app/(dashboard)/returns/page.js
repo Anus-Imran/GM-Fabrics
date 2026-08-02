@@ -14,6 +14,7 @@ import { formatDateTime } from "../../../utils/formatDate.js";
 import { showToastSuccess, showToastError, confirmAction } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
 import { DataTable } from "../../../components/common/dataTable.jsx";
+import { Loader } from "../../../components/common/loader.jsx";
 
 function ReturnsContent() {
   const searchParams = useSearchParams();
@@ -210,7 +211,7 @@ function ReturnsContent() {
 
       <Card>
         {loading ? (
-          <div className="py-8 text-center text-xs text-zinc-400">Loading sales returns...</div>
+          <Loader text="Loading sales returns history..." icon={RotateCcw} />
         ) : (
           <DataTable
             title="Sales_Returns_History"

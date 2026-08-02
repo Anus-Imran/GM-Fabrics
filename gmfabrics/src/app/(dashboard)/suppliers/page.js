@@ -10,6 +10,7 @@ import { Plus, Edit2, Trash2, Truck } from "lucide-react";
 import { showToastSuccess, showToastError, confirmDelete } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
 import { DataTable } from "../../../components/common/dataTable.jsx";
+import { Loader } from "../../../components/common/loader.jsx";
 
 export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState([]);
@@ -109,7 +110,7 @@ export default function SuppliersPage() {
 
       <Card>
         {loading ? (
-          <div className="py-8 text-center text-xs text-zinc-400">Loading suppliers...</div>
+          <Loader text="Loading supplier & vendor profiles..." icon={Truck} />
         ) : (
           <DataTable
             title="Suppliers_List"

@@ -6,7 +6,9 @@ import { Card, CardHeader } from "../../../components/common/card.jsx";
 import { KpiCard } from "../../../components/dashboard/kpiCard.jsx";
 import { formatCurrency } from "../../../utils/formatCurrency.js";
 import { DollarSign, TrendingUp, Package, Award } from "lucide-react";
+import { showToastSuccess, showToastError } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
+import { Loader } from "../../../components/common/loader.jsx";
 
 export default function ReportsPage() {
   const [pnL, setPnL] = useState(null);
@@ -37,7 +39,7 @@ export default function ReportsPage() {
   };
 
   if (loading) {
-    return <div className="py-12 text-center text-xs text-zinc-400">Loading business financial reports...</div>;
+    return <Loader text="Loading business financial reports & analytics..." size="lg" />;
   }
 
   return (

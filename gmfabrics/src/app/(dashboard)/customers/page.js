@@ -10,6 +10,7 @@ import { Button } from "../../../components/common/button.jsx";
 import { Plus, Search } from "lucide-react";
 import { showToastSuccess, showToastError } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
+import { Loader } from "../../../components/common/loader.jsx";
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState([]);
@@ -101,7 +102,7 @@ export default function CustomersPage() {
         </div>
 
         {loading ? (
-          <div className="py-8 text-center text-xs text-zinc-400">Loading customers...</div>
+          <Loader text="Loading customer khata accounts..." />
         ) : (
           <CustomerTable
             customers={filtered}

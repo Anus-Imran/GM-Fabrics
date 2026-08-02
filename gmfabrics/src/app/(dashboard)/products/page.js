@@ -7,11 +7,12 @@ import { ProductFormModal } from "../../../components/products/productFormModal.
 import { Card } from "../../../components/common/card.jsx";
 import { Button } from "../../../components/common/button.jsx";
 import { Modal } from "../../../components/common/modal.jsx";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, Package } from "lucide-react";
 import { formatCurrency } from "../../../utils/formatCurrency.js";
 import { formatDateTime } from "../../../utils/formatDate.js";
 import { showToastSuccess, showToastError, confirmDelete } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
+import { Loader } from "../../../components/common/loader.jsx";
 
 export default function ProductsPage() {
   const [products, setProducts] = useState([]);
@@ -132,7 +133,7 @@ export default function ProductsPage() {
         </div>
 
         {loading ? (
-          <div className="py-8 text-center text-xs text-zinc-400">Loading fabric catalog...</div>
+          <Loader text="Loading fabric products catalog..." icon={Package} />
         ) : (
           <ProductTable
             products={filtered}

@@ -8,6 +8,7 @@ import { PaymentModal } from "../../../components/pos/paymentModal.jsx";
 import { ReceiptModal } from "../../../components/pos/receiptModal.jsx";
 import { useCart } from "../../../context/cartContext.jsx";
 import api from "../../../services/apiService.js";
+import { Loader } from "../../../components/common/loader.jsx";
 
 export default function PosPage() {
   const [products, setProducts] = useState([]);
@@ -92,8 +93,8 @@ export default function PosPage() {
         {/* Product Grid */}
         <div className="flex-1 overflow-hidden">
           {loading ? (
-            <div className="h-full flex items-center justify-center text-xs text-zinc-400">
-              Loading Fabric Catalog...
+            <div className="h-full flex items-center justify-center">
+              <Loader text="Loading fabric catalog & active lots..." size="lg" />
             </div>
           ) : (
             <ProductGrid

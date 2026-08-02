@@ -6,9 +6,10 @@ import { StockEntryTable } from "../../../components/inventory/stockEntryTable.j
 import { StockEntryModal } from "../../../components/inventory/stockEntryModal.jsx";
 import { Card } from "../../../components/common/card.jsx";
 import { Button } from "../../../components/common/button.jsx";
-import { Plus } from "lucide-react";
+import { Plus, Package } from "lucide-react";
 import { showToastSuccess, showToastError } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
+import { Loader } from "../../../components/common/loader.jsx";
 
 export default function StockEntriesPage() {
   const [entries, setEntries] = useState([]);
@@ -63,7 +64,7 @@ export default function StockEntriesPage() {
 
       <Card>
         {loading ? (
-          <div className="py-8 text-center text-xs text-zinc-400">Loading purchase entries...</div>
+          <Loader text="Loading stock purchase entries..." icon={Package} />
         ) : (
           <StockEntryTable entries={entries} />
         )}

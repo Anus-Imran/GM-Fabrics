@@ -9,6 +9,7 @@ import { Input } from "../../../components/common/input.jsx";
 import { Plus, Ruler, Trash2 } from "lucide-react";
 import { showToastSuccess, showToastError, confirmDelete } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
+import { Loader } from "../../../components/common/loader.jsx";
 
 export default function UnitsPage() {
   const [units, setUnits] = useState([]);
@@ -80,7 +81,7 @@ export default function UnitsPage() {
 
       <Card>
         {loading ? (
-          <div className="py-8 text-center text-xs text-zinc-400">Loading units...</div>
+          <Loader text="Loading measurement units..." icon={Ruler} />
         ) : (
           <table className="w-full text-left text-xs border-collapse">
             <thead>

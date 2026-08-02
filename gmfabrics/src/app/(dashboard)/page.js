@@ -34,6 +34,7 @@ import {
 import { formatCurrency } from "../../utils/formatCurrency.js";
 import { useAuth } from "../../context/authContext.jsx";
 import api from "../../services/apiService.js";
+import { Loader } from "../../components/common/loader.jsx";
 
 export default function DashboardPage() {
   const [data, setData] = useState(null);
@@ -280,7 +281,11 @@ export default function DashboardPage() {
       </div>
 
       {/* 4. Comprehensive Metric KPI Cards Grid (7 Cards across 2 Rows) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {loading && !data ? (
+        <Loader text="Syncing business analytics & KPI metrics..." size="lg" />
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
           title="Sales Revenue"
           value={formatCurrency(data?.periodRevenue || 0)}
@@ -482,6 +487,8 @@ export default function DashboardPage() {
           </Card>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }

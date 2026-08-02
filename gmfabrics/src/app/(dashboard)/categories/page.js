@@ -9,8 +9,8 @@ import { Input } from "../../../components/common/input.jsx";
 import { Plus, Edit2, Trash2, Layers } from "lucide-react";
 import { showToastSuccess, showToastError, confirmDelete } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
-
 import { DataTable } from "../../../components/common/dataTable.jsx";
+import { Loader } from "../../../components/common/loader.jsx";
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState([]);
@@ -104,7 +104,7 @@ export default function CategoriesPage() {
 
       <Card>
         {loading ? (
-          <div className="py-8 text-center text-xs text-zinc-400">Loading categories...</div>
+          <Loader text="Loading fabric categories..." icon={Layers} />
         ) : (
           <DataTable
             title="Fabric_Categories"

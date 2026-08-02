@@ -9,6 +9,7 @@ import { Button } from "../../../components/common/button.jsx";
 import { Plus } from "lucide-react";
 import { showToastSuccess, showToastError, confirmDelete } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
+import { Loader } from "../../../components/common/loader.jsx";
 
 export default function ExpensesPage() {
   const [expenses, setExpenses] = useState([]);
@@ -73,7 +74,7 @@ export default function ExpensesPage() {
 
       <Card>
         {loading ? (
-          <div className="py-8 text-center text-xs text-zinc-400">Loading expenses...</div>
+          <Loader text="Loading shop operating expenses..." />
         ) : (
           <ExpenseTable expenses={expenses} onDelete={handleDeleteExpense} />
         )}

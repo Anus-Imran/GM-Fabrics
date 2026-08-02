@@ -9,6 +9,7 @@ import { Input } from "../../../components/common/input.jsx";
 import { Plus, Edit2, Trash2, Tag } from "lucide-react";
 import { showToastSuccess, showToastError, confirmDelete } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
+import { Loader } from "../../../components/common/loader.jsx";
 
 export default function BrandsPage() {
   const [brands, setBrands] = useState([]);
@@ -96,7 +97,7 @@ export default function BrandsPage() {
 
       <Card>
         {loading ? (
-          <div className="py-8 text-center text-xs text-zinc-400">Loading brands...</div>
+          <Loader text="Loading fabric brands & labels..." />
         ) : (
           <table className="w-full text-left text-xs border-collapse">
             <thead>

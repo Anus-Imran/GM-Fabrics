@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { Button } from "./button.jsx";
 import { Modal } from "./modal.jsx";
+import { Loader } from "./loader.jsx";
 
 export const DataTable = ({
   columns = [],
@@ -32,6 +33,7 @@ export const DataTable = ({
   enableDateFilter = true,
   defaultPageSize = 10,
   emptyMessage = "No matching records found.",
+  loading = false,
 }) => {
   // State
   const [searchTerm, setSearchTerm] = useState("");
@@ -349,7 +351,13 @@ export const DataTable = ({
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60 font-medium">
-            {paginatedData.length === 0 ? (
+            {loading ? (
+              <tr>
+                <td colSpan={columns.length + (enableSelection ? 1 : 0)} className="py-8 text-center">
+                  <Loader text={`Loading ${title ? title.replace(/_/g, " ") : "records"}...`} />
+                </td>
+              </tr>
+            ) : paginatedData.length === 0 ? (
               <tr>
                 <td colSpan={columns.length + (enableSelection ? 1 : 0)} className="py-12 text-center text-zinc-400">
                   <div className="flex flex-col items-center justify-center space-y-2">

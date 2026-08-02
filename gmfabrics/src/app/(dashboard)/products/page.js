@@ -101,6 +101,15 @@ export default function ProductsPage() {
       (p.barcode && p.barcode.includes(searchTerm))
   );
 
+  const totalStockQty = products.reduce((sum, p) => sum + (parseFloat(p.stockQuantity) || 0), 0);
+  const totalStockValue = products.reduce((sum, p) => {
+    if (p.batches && p.batches.length > 0) {
+      const bSum = p.batches.reduce((bAcc, b) => bAcc + (b.remainingQuantity * (b.costPerUnit || 0)), 0);
+      return sum + bSum;
+    }
+    return sum + ((parseFloat(p.stockQuantity) || 0) * (parseFloat(p.costPrice) || 0));
+  }, 0);
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -118,6 +127,27 @@ export default function ProductsPage() {
           </Button>
         }
       />
+
+      {/* Stock Investment Summary Bar */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="p-4 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Catalog Products</span>
+          <div className="text-2xl font-black text-zinc-900 dark:text-zinc-100">{products.length} Items</div>
+          <p className="text-[10px] text-zinc-400">Total registered fabric designs</p>
+        </div>
+
+        <div className="p-4 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Total Remaining Stock</span>
+          <div className="text-2xl font-black text-zinc-900 dark:text-zinc-100">{totalStockQty} Pcs / Units</div>
+          <p className="text-[10px] text-zinc-400">Available physical shop quantity</p>
+        </div>
+
+        <div className="p-4 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 rounded-2xl shadow-md space-y-1">
+          <span className="text-[11px] font-extrabold uppercase tracking-wider opacity-70">Total Stock Investment Value</span>
+          <div className="text-2xl font-black">{formatCurrency(totalStockValue)}</div>
+          <p className="text-[10px] opacity-70">Multi-batch lot cost valuation sum</p>
+        </div>
+      </div>
 
       <Card>
         {loading ? (

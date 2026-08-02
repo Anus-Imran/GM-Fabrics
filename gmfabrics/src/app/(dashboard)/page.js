@@ -320,7 +320,7 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
           title="Estimated Net Profit"
           value={formatCurrency(data?.netProfit || 0)}
@@ -336,6 +336,14 @@ export default function DashboardPage() {
           icon={CreditCard}
           badgeText={data?.totalKhataBalance > 0 ? "RECEIVABLE" : "CLEARED"}
           badgeVariant={data?.totalKhataBalance > 0 ? "warning" : "success"}
+        />
+        <KpiCard
+          title="Total Stock Value"
+          value={formatCurrency(data?.totalStockValue || 0)}
+          subtext={`Valuation of ${data?.totalStockItems || 0} remaining pcs`}
+          icon={Package}
+          badgeText="STOCK VALUE"
+          badgeVariant="info"
         />
         <KpiCard
           title="Low Stock Watchlist"

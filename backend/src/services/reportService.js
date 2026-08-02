@@ -89,7 +89,32 @@ export const getDashboardKpis = async (params = {}) => {
   });
   const totalKhataBalance = customerBalanceAgg._sum.outstandingBalance || 0;
 
-  // 6. Low stock products
+  // 6. Total Stock Valuation across all active multi-batch lots
+  const activeBatches = await prisma.stockBatch.findMany({
+    where: { remainingQuantity: { gt: 0 } },
+  });
+
+  let totalStockValue = 0;
+  let totalStockItems = 0;
+
+  activeBatches.forEach((b) => {
+    totalStockValue += b.remainingQuantity * (b.costPerUnit || 0);
+    totalStockItems += b.remainingQuantity;
+  });
+
+  const productsWithStock = await prisma.product.findMany({
+    where: { isActive: true, stockQuantity: { gt: 0 } },
+    include: { batches: { where: { remainingQuantity: { gt: 0 } } } },
+  });
+
+  productsWithStock.forEach((p) => {
+    if (!p.batches || p.batches.length === 0) {
+      totalStockValue += p.stockQuantity * (p.costPrice || 0);
+      totalStockItems += p.stockQuantity;
+    }
+  });
+
+  // 7. Low stock products
   const allActiveProducts = await prisma.product.findMany({
     where: { isActive: true },
     include: { unit: true, category: true, brand: true },
@@ -285,6 +310,8 @@ export const getDashboardKpis = async (params = {}) => {
     periodReturnsCount,
     netProfit,
     totalKhataBalance,
+    totalStockValue,
+    totalStockItems,
     lowStockCount: lowStockProducts.length,
     lowStockProducts: lowStockProducts.slice(0, 6),
     paymentMethodBreakdown,
@@ -332,7 +359,13 @@ export const getSalesReport = async (from, to) => {
 export const getInventoryReport = async () => {
   const products = await prisma.product.findMany({
     where: { isActive: true },
-    include: { category: true, brand: true, unit: true, supplier: true },
+    include: {
+      category: true,
+      brand: true,
+      unit: true,
+      supplier: true,
+      batches: { where: { remainingQuantity: { gt: 0 } } },
+    },
     orderBy: { name: "asc" },
   });
 
@@ -341,15 +374,28 @@ export const getInventoryReport = async () => {
   let totalItemsCount = 0;
 
   const productValuation = products.map((p) => {
-    const costVal = p.stockQuantity * p.costPrice;
-    const retailVal = p.stockQuantity * p.salePrice;
+    let costVal = 0;
+    let totalQty = 0;
+
+    if (p.batches && p.batches.length > 0) {
+      p.batches.forEach((b) => {
+        costVal += b.remainingQuantity * (b.costPerUnit || 0);
+        totalQty += b.remainingQuantity;
+      });
+    } else {
+      totalQty = p.stockQuantity;
+      costVal = p.stockQuantity * (p.costPrice || 0);
+    }
+
+    const retailVal = totalQty * (p.salePrice || 0);
 
     totalCostValue += costVal;
     totalRetailValue += retailVal;
-    totalItemsCount += p.stockQuantity;
+    totalItemsCount += totalQty;
 
     return {
       ...p,
+      stockQuantity: totalQty,
       costValuation: costVal,
       retailValuation: retailVal,
     };

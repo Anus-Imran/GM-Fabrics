@@ -35,10 +35,12 @@ function ReturnsContent() {
   const [error, setError] = useState("");
 
   const fetchReturns = () => {
+    setLoading(true);
     return api
       .get("/returns")
       .then((res) => {
-        if (res.data) setReturns(res.data);
+        const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+        setReturns(list);
       })
       .catch((err) => {
         console.error("Failed to fetch returns:", err);

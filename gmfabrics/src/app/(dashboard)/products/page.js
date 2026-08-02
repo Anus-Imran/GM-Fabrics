@@ -44,10 +44,10 @@ export default function ProductsPage() {
         api.get("/brands"),
         api.get("/units"),
       ]);
-      if (prodRes.data) setProducts(prodRes.data);
-      if (catRes.data) setCategories(catRes.data);
-      if (brandRes.data) setBrands(brandRes.data);
-      if (unitRes.data) setUnits(unitRes.data);
+      setProducts(Array.isArray(prodRes?.data) ? prodRes.data : Array.isArray(prodRes) ? prodRes : []);
+      setCategories(Array.isArray(catRes?.data) ? catRes.data : Array.isArray(catRes) ? catRes : []);
+      setBrands(Array.isArray(brandRes?.data) ? brandRes.data : Array.isArray(brandRes) ? brandRes : []);
+      setUnits(Array.isArray(unitRes?.data) ? unitRes.data : Array.isArray(unitRes) ? unitRes : []);
     } catch (err) {
       console.error("Products error:", err);
     } finally {

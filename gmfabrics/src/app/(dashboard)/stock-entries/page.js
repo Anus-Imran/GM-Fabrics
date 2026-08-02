@@ -30,9 +30,9 @@ export default function StockEntriesPage() {
         api.get("/products"),
         api.get("/suppliers"),
       ]);
-      if (entryRes.data) setEntries(entryRes.data);
-      if (prodRes.data) setProducts(prodRes.data);
-      if (supRes.data) setSuppliers(supRes.data);
+      setEntries(Array.isArray(entryRes?.data) ? entryRes.data : Array.isArray(entryRes) ? entryRes : []);
+      setProducts(Array.isArray(prodRes?.data) ? prodRes.data : Array.isArray(prodRes) ? prodRes : []);
+      setSuppliers(Array.isArray(supRes?.data) ? supRes.data : Array.isArray(supRes) ? supRes : []);
     } catch (err) {
       console.error("Stock entries error:", err);
     } finally {

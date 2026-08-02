@@ -28,7 +28,8 @@ export default function BrandsPage() {
     setLoading(true);
     try {
       const res = await api.get("/brands");
-      if (res.data) setBrands(res.data);
+      const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+      setBrands(list);
     } catch (err) {
       console.error(err);
     } finally {

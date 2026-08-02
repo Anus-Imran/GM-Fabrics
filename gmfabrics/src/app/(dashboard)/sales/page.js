@@ -20,12 +20,16 @@ export default function SalesPage() {
   const [showReceiptModal, setShowReceiptModal] = useState(false);
 
   const fetchSales = () => {
+    setLoading(true);
     return api
       .get("/sales")
       .then((res) => {
-        if (res.data) setSales(res.data);
+        const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+        setSales(list);
       })
-      .catch(console.error)
+      .catch((err) => {
+        console.error("Fetch sales error:", err);
+      })
       .finally(() => {
         setLoading(false);
       });

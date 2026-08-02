@@ -114,12 +114,12 @@ export const createSale = async (userId, data) => {
         if (existingCust) {
           finalCustomerId = existingCust.id;
         } else {
+          const fullAddress = [inlineAddress, inlineCity].filter(Boolean).map((s) => s.trim()).join(", ");
           const createdCust = await tx.customer.create({
             data: {
               name: cleanName,
               phone: cleanPhone || null,
-              city: inlineCity ? inlineCity.trim() : null,
-              address: inlineAddress ? inlineAddress.trim() : null,
+              address: fullAddress || null,
             },
           });
           finalCustomerId = createdCust.id;

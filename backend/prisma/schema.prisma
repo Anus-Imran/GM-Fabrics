@@ -33,6 +33,7 @@ model User {
   role      Role      @default(CASHIER)
   sales     Sale[]
   expenses  Expense[]
+  notes     Note[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 }
@@ -290,4 +291,19 @@ model Notification {
   isRead    Boolean  @default(false)
   metadata  Json?
   createdAt DateTime @default(now())
+}
+
+// 17. Notes & To-Do Items
+model Note {
+  id          Int       @id @default(autoincrement())
+  title       String
+  content     String?   @db.Text
+  priority    String    @default("MEDIUM") // "LOW", "MEDIUM", "HIGH"
+  isCompleted Boolean   @default(false)
+  color       String?   @default("yellow") // "yellow", "blue", "emerald", "purple", "rose"
+  dueDate     DateTime?
+  userId      Int?
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }

@@ -17,6 +17,7 @@ import {
   Receipt,
   RotateCcw,
   BarChart3,
+  StickyNote,
   LogOut,
   Sun,
   Moon,
@@ -65,6 +66,7 @@ export const SidebarNav = () => {
       items: [
         { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
         { label: "POS Counter", href: "/pos", icon: ShoppingCart, highlight: true },
+        { label: "Notes & To-Do", href: "/notes", icon: StickyNote },
       ],
     },
     {

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useMemo } from "react";
+import { showErrorAlert, showToastError } from "../utils/alerts.js";
 
 const CartContext = createContext();
 
@@ -27,14 +28,45 @@ export const CartProvider = ({ children }) => {
   const [notes, setNotes] = useState("");
 
   const addToCart = (product, quantity = 1) => {
+    const availableStock = parseFloat(product.stockQuantity) || 0;
+
+    if (availableStock <= 0) {
+      showErrorAlert(
+        "Out of Stock!",
+        `"${product.name}" is out of stock (${availableStock} available). Cannot add to current bill.`
+      );
+      return;
+    }
+
     const isDecimalAllowed = product.unit?.allowDecimal !== false;
     const initialQty = isDecimalAllowed ? parseFloat(quantity) : Math.round(parseFloat(quantity));
+
+    if (isNaN(initialQty) || initialQty <= 0) return;
 
     setItems((prevItems) => {
       const existingProductItems = prevItems.filter((i) => i.product.id === product.id);
       const existingTotalQty = existingProductItems.reduce((sum, i) => sum + i.quantity, 0);
 
-      let newTotalQty = existingTotalQty + initialQty;
+      let requestedTotalQty = existingTotalQty + initialQty;
+
+      if (requestedTotalQty > availableStock) {
+        const remainingAllowed = availableStock - existingTotalQty;
+
+        if (remainingAllowed <= 0) {
+          showErrorAlert(
+            "Stock Limit Reached",
+            `Cannot add more "${product.name}". Total available stock is ${availableStock} ${product.unit?.symbol || "pcs"}.`
+          );
+          return prevItems;
+        }
+
+        showToastError(
+          `Only ${remainingAllowed} ${product.unit?.symbol || "pcs"} remaining in stock. Cart updated to max available stock (${availableStock}).`
+        );
+        requestedTotalQty = availableStock;
+      }
+
+      let newTotalQty = requestedTotalQty;
       if (!isDecimalAllowed) newTotalQty = Math.round(newTotalQty);
 
       const activeBatches = (product.stockBatches || [])
@@ -133,12 +165,28 @@ export const CartProvider = ({ children }) => {
       if (!targetItem) return prevItems;
 
       const product = targetItem.product;
-      const isDecimalAllowed = product.unit?.allowDecimal !== false;
-      if (!isDecimalAllowed) qty = Math.round(qty);
+      const availableStock = parseFloat(product.stockQuantity) || 0;
 
       const otherItemsOfProduct = prevItems.filter((i) => i.product.id === product.id && i.cartItemId !== cartItemId);
       const totalOtherQty = otherItemsOfProduct.reduce((sum, i) => sum + i.quantity, 0);
-      const desiredTotalQty = totalOtherQty + qty;
+
+      let desiredTotalQty = totalOtherQty + qty;
+
+      if (desiredTotalQty > availableStock) {
+        const maxQtyForThisLine = Math.max(0, availableStock - totalOtherQty);
+        showToastError(
+          `Cannot exceed available stock of ${availableStock} for "${product.name}". Max allowed: ${maxQtyForThisLine}`
+        );
+        qty = maxQtyForThisLine;
+        if (qty <= 0) {
+          return prevItems.filter((i) => i.cartItemId !== cartItemId);
+        }
+        desiredTotalQty = totalOtherQty + qty;
+      }
+
+      const isDecimalAllowed = product.unit?.allowDecimal !== false;
+      if (!isDecimalAllowed) qty = Math.round(qty);
+      desiredTotalQty = totalOtherQty + qty;
 
       const activeBatches = (product.stockBatches || [])
         .filter((b) => b.remainingQuantity > 0)

@@ -151,9 +151,10 @@ export const createSale = async (userId, data) => {
           throw new Error(`Product ID ${prodId} not found or inactive`);
         }
 
-        if (product.stockQuantity < qty) {
+        if (product.stockQuantity <= 0 || product.stockQuantity < qty) {
+          const avail = Math.max(0, product.stockQuantity);
           throw new Error(
-            `Insufficient stock for "${product.name}". Available: ${product.stockQuantity} ${product.unit.name}, requested: ${qty}`
+            `Insufficient stock for "${product.name}". Available: ${avail} ${product.unit?.symbol || product.unit?.name || "pcs"}, requested: ${qty}`
           );
         }
 

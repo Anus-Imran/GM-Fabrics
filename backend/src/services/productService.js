@@ -25,6 +25,10 @@ export const getAllProducts = async (filters = {}) => {
       brand: true,
       unit: true,
       supplier: true,
+      stockBatches: {
+        where: { remainingQuantity: { gt: 0 } },
+        orderBy: { createdAt: "asc" },
+      },
     },
     orderBy: { name: "asc" },
   });
@@ -78,6 +82,10 @@ export const searchProducts = async (query) => {
       category: true,
       brand: true,
       unit: true,
+      stockBatches: {
+        where: { remainingQuantity: { gt: 0 } },
+        orderBy: { createdAt: "asc" },
+      },
     },
     take: 20,
   });
@@ -111,6 +119,7 @@ export const createProduct = async (data) => {
 
   const initialStock = parseFloat(stockQuantity || 0);
   const cost = parseFloat(costPrice || 0);
+  const selling = parseFloat(salePrice || 0);
 
   return prisma.$transaction(async (tx) => {
     const product = await tx.product.create({
@@ -124,7 +133,7 @@ export const createProduct = async (data) => {
         unitId: parseInt(unitId, 10),
         supplierId: supplierId ? parseInt(supplierId, 10) : null,
         costPrice: cost,
-        salePrice: parseFloat(salePrice || 0),
+        salePrice: selling,
         stockQuantity: initialStock,
         lowStockAlert: parseFloat(lowStockAlert || 10),
       },
@@ -144,6 +153,7 @@ export const createProduct = async (data) => {
           initialQuantity: initialStock,
           remainingQuantity: initialStock,
           costPrice: cost,
+          sellingPrice: selling,
         },
       });
     }

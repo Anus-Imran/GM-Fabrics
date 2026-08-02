@@ -156,6 +156,21 @@ export const CartPanel = ({ customers = [], onOpenCheckout }) => {
                   </div>
                 </div>
 
+                {/* FIFO Batch Pricing Breakdown Badge */}
+                {item.batchBreakdown && item.batchBreakdown.length > 0 && (
+                  <div className="text-[10px] bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 p-1.5 rounded border border-blue-200 dark:border-blue-800 font-medium">
+                    <div className="font-semibold text-[9.5px] uppercase tracking-wider mb-0.5 text-blue-800 dark:text-blue-200">
+                      ⚡ FIFO Batch Allocation:
+                    </div>
+                    {item.batchBreakdown.map((b, idx) => (
+                      <div key={idx} className="flex justify-between">
+                        <span>• Lot #{idx + 1}: {b.quantity} {item.product.unit?.symbol || "pcs"} @ {formatCurrency(b.sellingPrice)}</span>
+                        <span className="font-bold">{formatCurrency(b.quantity * b.sellingPrice)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between pt-1 border-t border-zinc-200/50 dark:border-zinc-800/50 text-xs">
                   <div>
                     {hasCustomDiscount ? (
@@ -165,6 +180,10 @@ export const CartPanel = ({ customers = [], onOpenCheckout }) => {
                     ) : item.unitPrice > item.product.salePrice ? (
                       <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
                         Premium Rate: +{formatCurrency(item.unitPrice - item.product.salePrice)}
+                      </span>
+                    ) : item.isMultiBatch ? (
+                      <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+                        Blended FIFO Rate: {formatCurrency(item.unitPrice)}/unit
                       </span>
                     ) : (
                       <span className="text-[10px] text-zinc-400">Catalog Rate: {formatCurrency(item.product.salePrice)}</span>

@@ -171,7 +171,7 @@ export const createSale = async (userId, data) => {
 
       // 5. Create SaleItems, Deduct Stock using FIFO, and Update Product Stock
       for (const item of preparedItems) {
-        // Deduct quantity from oldest active stock batches (FIFO) & calculate exact COGS
+        // Deduct quantity from oldest active stock batches (FIFO) & record exact batch sale items
         const batches = await tx.stockBatch.findMany({
           where: {
             productId: item.productId,
@@ -181,40 +181,50 @@ export const createSale = async (userId, data) => {
         });
 
         let remainingToDeduct = item.quantity;
-        let totalCostFromBatches = 0;
 
-        for (const batch of batches) {
-          if (remainingToDeduct <= 0) break;
+        if (batches.length > 0) {
+          for (const batch of batches) {
+            if (remainingToDeduct <= 0) break;
 
-          const takeFromThisBatch = Math.min(batch.remainingQuantity, remainingToDeduct);
-          totalCostFromBatches += takeFromThisBatch * batch.costPrice;
+            const takeFromThisBatch = Math.min(batch.remainingQuantity, remainingToDeduct);
+            const batchCost = batch.costPrice || item.product.costPrice || 0;
+            // Use batch sellingPrice if recorded (>0), otherwise item.unitPrice
+            const batchSelling = batch.sellingPrice > 0 ? batch.sellingPrice : item.unitPrice;
 
-          await tx.stockBatch.update({
-            where: { id: batch.id },
-            data: {
-              remainingQuantity: batch.remainingQuantity - takeFromThisBatch,
-            },
-          });
+            await tx.stockBatch.update({
+              where: { id: batch.id },
+              data: {
+                remainingQuantity: batch.remainingQuantity - takeFromThisBatch,
+              },
+            });
 
-          remainingToDeduct -= takeFromThisBatch;
+            await tx.saleItem.create({
+              data: {
+                saleId: sale.id,
+                productId: item.productId,
+                quantity: takeFromThisBatch,
+                costPrice: batchCost,
+                unitPrice: batchSelling,
+                subtotal: takeFromThisBatch * batchSelling,
+              },
+            });
+
+            remainingToDeduct -= takeFromThisBatch;
+          }
         }
 
         if (remainingToDeduct > 0) {
-          totalCostFromBatches += remainingToDeduct * (item.product.costPrice || 0);
+          await tx.saleItem.create({
+            data: {
+              saleId: sale.id,
+              productId: item.productId,
+              quantity: remainingToDeduct,
+              costPrice: item.product.costPrice || 0,
+              unitPrice: item.unitPrice,
+              subtotal: remainingToDeduct * item.unitPrice,
+            },
+          });
         }
-
-        const effectiveCostPrice = item.quantity > 0 ? totalCostFromBatches / item.quantity : (item.product.costPrice || 0);
-
-        await tx.saleItem.create({
-          data: {
-            saleId: sale.id,
-            productId: item.productId,
-            quantity: item.quantity,
-            costPrice: effectiveCostPrice,
-            unitPrice: item.unitPrice,
-            subtotal: item.subtotal,
-          },
-        });
 
         const updatedStock = item.product.stockQuantity - item.quantity;
 

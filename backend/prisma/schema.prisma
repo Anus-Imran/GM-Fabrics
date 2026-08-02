@@ -148,6 +148,7 @@ model StockBatch {
   initialQuantity   Float
   remainingQuantity Float
   costPrice         Float
+  sellingPrice      Float       @default(0)
 
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt

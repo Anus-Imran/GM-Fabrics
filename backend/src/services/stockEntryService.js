@@ -74,6 +74,8 @@ export const createStockEntry = async (data) => {
       },
     });
 
+    const batchSalePrice = parsedNewSalePrice && parsedNewSalePrice > 0 ? parsedNewSalePrice : (product.salePrice || 0);
+
     // 3. Create independent StockBatch for this purchase lot
     await tx.stockBatch.create({
       data: {
@@ -82,6 +84,7 @@ export const createStockEntry = async (data) => {
         initialQuantity: qty,
         remainingQuantity: qty,
         costPrice: costUnit,
+        sellingPrice: batchSalePrice,
         createdAt: purchasedAt ? new Date(purchasedAt) : new Date(),
       },
     });

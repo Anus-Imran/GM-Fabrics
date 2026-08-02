@@ -4,80 +4,21 @@ import React, { createContext, useContext, useState, useMemo } from "react";
 
 const CartContext = createContext();
 
-export const calculateFifoProductPrice = (product, quantity, isManualOverride = false, customUnitPrice = null) => {
-  const isDecimalAllowed = product?.unit?.allowDecimal !== false;
-  const qty = isDecimalAllowed ? parseFloat(quantity) : Math.round(parseFloat(quantity));
-
-  if (!product || qty <= 0) {
-    return { subtotal: 0, unitPrice: product?.salePrice || 0, batchBreakdown: [], isMultiBatch: false };
-  }
-
-  if (isManualOverride && customUnitPrice !== null) {
-    const uPrice = Math.round(parseFloat(customUnitPrice) || 0);
-    return {
-      subtotal: Math.round(qty * uPrice),
-      unitPrice: uPrice,
-      batchBreakdown: [{ quantity: qty, sellingPrice: uPrice, costPrice: product.costPrice || 0 }],
-      isMultiBatch: false,
-      isManualOverride: true,
-    };
-  }
-
-  const activeBatches = (product.stockBatches || [])
-    .filter((b) => b.remainingQuantity > 0)
-    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-
-  if (activeBatches.length === 0) {
-    const unitPrice = Math.round(product.salePrice || 0);
-    return {
-      subtotal: Math.round(qty * unitPrice),
-      unitPrice,
-      batchBreakdown: [{ quantity: qty, sellingPrice: unitPrice, costPrice: product.costPrice || 0 }],
-      isMultiBatch: false,
-    };
-  }
-
-  let remaining = qty;
-  let totalSubtotal = 0;
-  const breakdown = [];
-
-  for (const b of activeBatches) {
-    if (remaining <= 0) break;
-    const take = Math.min(b.remainingQuantity, remaining);
-    const bPrice = b.sellingPrice > 0 ? b.sellingPrice : (product.salePrice || 0);
-    totalSubtotal += take * bPrice;
-    breakdown.push({
-      batchId: b.id,
-      quantity: take,
-      sellingPrice: bPrice,
-      costPrice: b.costPrice,
-    });
-    remaining -= take;
-  }
-
-  if (remaining > 0) {
-    const fallbackPrice = product.salePrice || 0;
-    totalSubtotal += remaining * fallbackPrice;
-    breakdown.push({
-      quantity: remaining,
-      sellingPrice: fallbackPrice,
-      costPrice: product.costPrice || 0,
-    });
-  }
-
-  const subtotal = Math.round(totalSubtotal);
-  const unitPrice = Math.round(subtotal / qty);
-
-  return {
-    subtotal,
-    unitPrice,
-    batchBreakdown: breakdown,
-    isMultiBatch: breakdown.length > 1,
-  };
-};
-
 export const CartProvider = ({ children }) => {
-  const [items, setItems] = useState([]); // { product, quantity, unitPrice, subtotal, batchBreakdown, isMultiBatch, isManualOverride }
+  const [items, setItems] = useState([]);
+  // Line item structure:
+  // {
+  //   cartItemId: string (e.g. "6_batch_15"),
+  //   product: object,
+  //   batch: object | null,
+  //   batchLabel: string,
+  //   basePrice: number,
+  //   quantity: number,
+  //   customDiscount: number, // Manual discount per unit typed by cashier
+  //   unitPrice: number,       // basePrice - customDiscount
+  //   subtotal: number,
+  // }
+
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [discountType, setDiscountType] = useState(null); // "PERCENTAGE" | "FLAT" | null
   const [discountValue, setDiscountValue] = useState(0);
@@ -90,68 +31,123 @@ export const CartProvider = ({ children }) => {
     const initialQty = isDecimalAllowed ? parseFloat(quantity) : Math.round(parseFloat(quantity));
 
     setItems((prevItems) => {
-      const existingIndex = prevItems.findIndex((item) => item.product.id === product.id);
-      let newQty = initialQty;
-      let isManual = false;
-      let manualPrice = null;
+      // Find existing total quantity for this product in cart
+      const existingProductItems = prevItems.filter((i) => i.product.id === product.id);
+      const existingTotalQty = existingProductItems.reduce((sum, i) => sum + i.quantity, 0);
 
-      if (existingIndex > -1) {
-        newQty = prevItems[existingIndex].quantity + initialQty;
-        if (!isDecimalAllowed) newQty = Math.round(newQty);
-        isManual = prevItems[existingIndex].isManualOverride || false;
-        manualPrice = prevItems[existingIndex].unitPrice;
+      let newTotalQty = existingTotalQty + initialQty;
+      if (!isDecimalAllowed) newTotalQty = Math.round(newTotalQty);
+
+      // Active batches sorted FIFO (oldest first)
+      const activeBatches = (product.stockBatches || [])
+        .filter((b) => b.remainingQuantity > 0)
+        .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+      // Non-product items preserved
+      const otherItems = prevItems.filter((i) => i.product.id !== product.id);
+
+      if (activeBatches.length === 0) {
+        // Fallback if no active batches recorded
+        const basePrice = Math.round(product.salePrice || 0);
+        const existingDefault = existingProductItems.find((i) => i.cartItemId === `${product.id}_default`);
+        const disc = existingDefault ? existingDefault.customDiscount : 0;
+        const uPrice = Math.max(0, basePrice - disc);
+        const subtotal = Math.round(newTotalQty * uPrice);
+
+        return [
+          ...otherItems,
+          {
+            cartItemId: `${product.id}_default`,
+            product,
+            batch: null,
+            batchLabel: "Standard Catalog Rate",
+            basePrice,
+            quantity: newTotalQty,
+            customDiscount: disc,
+            unitPrice: uPrice,
+            subtotal,
+          },
+        ];
       }
 
-      const fifoResult = calculateFifoProductPrice(product, newQty, isManual, manualPrice);
+      // Perform FIFO allocation per batch
+      let remainingToAllocate = newTotalQty;
+      const allocatedItems = [];
 
-      const newItemObj = {
-        product,
-        quantity: newQty,
-        unitPrice: fifoResult.unitPrice,
-        subtotal: fifoResult.subtotal,
-        batchBreakdown: fifoResult.batchBreakdown,
-        isMultiBatch: fifoResult.isMultiBatch,
-        isManualOverride: isManual,
-      };
+      for (let idx = 0; idx < activeBatches.length; idx++) {
+        if (remainingToAllocate <= 0) break;
+        const b = activeBatches[idx];
+        const take = Math.min(b.remainingQuantity, remainingToAllocate);
+        const basePrice = Math.round(b.sellingPrice > 0 ? b.sellingPrice : (product.salePrice || 0));
+        const cartItemId = `${product.id}_batch_${b.id}`;
 
-      if (existingIndex > -1) {
-        const updated = [...prevItems];
-        updated[existingIndex] = newItemObj;
-        return updated;
-      } else {
-        return [...prevItems, newItemObj];
+        const existingBatchItem = existingProductItems.find((i) => i.cartItemId === cartItemId);
+        const disc = existingBatchItem ? existingBatchItem.customDiscount : 0;
+        const uPrice = Math.max(0, basePrice - disc);
+        const subtotal = Math.round(take * uPrice);
+
+        allocatedItems.push({
+          cartItemId,
+          product,
+          batch: b,
+          batchLabel: `Lot #${b.id}`,
+          basePrice,
+          quantity: take,
+          customDiscount: disc,
+          unitPrice: uPrice,
+          subtotal,
+        });
+
+        remainingToAllocate -= take;
       }
+
+      if (remainingToAllocate > 0) {
+        // Fallback for excess quantity over available batch stock
+        const basePrice = Math.round(product.salePrice || 0);
+        const cartItemId = `${product.id}_excess`;
+        const existingExcess = existingProductItems.find((i) => i.cartItemId === cartItemId);
+        const disc = existingExcess ? existingExcess.customDiscount : 0;
+        const uPrice = Math.max(0, basePrice - disc);
+        const subtotal = Math.round(remainingToAllocate * uPrice);
+
+        allocatedItems.push({
+          cartItemId,
+          product,
+          batch: null,
+          batchLabel: "Excess Stock",
+          basePrice,
+          quantity: remainingToAllocate,
+          customDiscount: disc,
+          unitPrice: uPrice,
+          subtotal,
+        });
+      }
+
+      return [...otherItems, ...allocatedItems];
     });
   };
 
-  const updateQuantity = (productId, newQuantity) => {
+  const updateQuantity = (cartItemId, newQuantity) => {
     let qty = parseFloat(newQuantity) || 0;
     if (qty <= 0) {
-      removeFromCart(productId);
+      removeFromCart(cartItemId);
       return;
     }
+
     setItems((prevItems) =>
       prevItems.map((item) => {
-        if (item.product.id === productId) {
+        if (item.cartItemId === cartItemId) {
           const isDecimalAllowed = item.product.unit?.allowDecimal !== false;
-          if (!isDecimalAllowed) {
-            qty = Math.round(qty);
-          }
+          if (!isDecimalAllowed) qty = Math.round(qty);
 
-          const fifoResult = calculateFifoProductPrice(
-            item.product,
-            qty,
-            item.isManualOverride,
-            item.unitPrice
-          );
+          const uPrice = Math.max(0, item.basePrice - item.customDiscount);
+          const subtotal = Math.round(qty * uPrice);
 
           return {
             ...item,
             quantity: qty,
-            unitPrice: fifoResult.unitPrice,
-            subtotal: fifoResult.subtotal,
-            batchBreakdown: fifoResult.batchBreakdown,
-            isMultiBatch: fifoResult.isMultiBatch,
+            unitPrice: uPrice,
+            subtotal,
           };
         }
         return item;
@@ -159,19 +155,20 @@ export const CartProvider = ({ children }) => {
     );
   };
 
-  const updateUnitPrice = (productId, newPrice) => {
-    const price = Math.round(parseFloat(newPrice) || 0);
+  const updateCustomDiscount = (cartItemId, discountPerUnit) => {
+    const disc = Math.max(0, parseFloat(discountPerUnit) || 0);
+
     setItems((prevItems) =>
       prevItems.map((item) => {
-        if (item.product.id === productId) {
-          const subtotal = Math.round(item.quantity * price);
+        if (item.cartItemId === cartItemId) {
+          const uPrice = Math.max(0, item.basePrice - disc);
+          const subtotal = Math.round(item.quantity * uPrice);
+
           return {
             ...item,
-            unitPrice: price,
+            customDiscount: disc,
+            unitPrice: uPrice,
             subtotal,
-            isManualOverride: true,
-            isMultiBatch: false,
-            batchBreakdown: [{ quantity: item.quantity, sellingPrice: price, costPrice: item.product.costPrice || 0 }],
           };
         }
         return item;
@@ -179,8 +176,29 @@ export const CartProvider = ({ children }) => {
     );
   };
 
-  const removeFromCart = (productId) => {
-    setItems((prevItems) => prevItems.filter((item) => item.product.id !== productId));
+  const updateUnitPrice = (cartItemId, newNetRate) => {
+    const rate = Math.max(0, parseFloat(newNetRate) || 0);
+
+    setItems((prevItems) =>
+      prevItems.map((item) => {
+        if (item.cartItemId === cartItemId) {
+          const disc = Math.max(0, item.basePrice - rate);
+          const subtotal = Math.round(item.quantity * rate);
+
+          return {
+            ...item,
+            customDiscount: disc,
+            unitPrice: rate,
+            subtotal,
+          };
+        }
+        return item;
+      })
+    );
+  };
+
+  const removeFromCart = (cartItemId) => {
+    setItems((prevItems) => prevItems.filter((item) => item.cartItemId !== cartItemId));
   };
 
   const clearCart = () => {
@@ -233,6 +251,7 @@ export const CartProvider = ({ children }) => {
         changeAmount,
         addToCart,
         updateQuantity,
+        updateCustomDiscount,
         updateUnitPrice,
         removeFromCart,
         clearCart,

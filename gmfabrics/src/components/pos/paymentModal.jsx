@@ -47,6 +47,7 @@ export const PaymentModal = ({ isOpen, onClose, onSaleSuccess }) => {
         customerId: selectedCustomer?.id || null,
         items: items.map((i) => ({
           productId: i.product.id,
+          batchId: i.batch?.id || null,
           quantity: i.quantity,
           unitPrice: i.unitPrice,
         })),

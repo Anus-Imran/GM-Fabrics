@@ -56,8 +56,9 @@ export default function DashboardPage() {
         url += `&startDate=${start}&endDate=${end}`;
       }
       const res = await api.get(url);
-      if (res.data) {
-        setData(res.data);
+      const kpiObj = res?.data ? res.data : (res?.periodRevenue !== undefined ? res : null);
+      if (kpiObj) {
+        setData(kpiObj);
       }
     } catch (err) {
       console.error("Dashboard error:", err);

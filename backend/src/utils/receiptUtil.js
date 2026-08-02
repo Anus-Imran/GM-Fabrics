@@ -1,5 +1,6 @@
 /**
  * Thermal Receipt HTML Generator (80mm width)
+ * Official GM Fabrics POS Receipt Template
  */
 export const generateReceiptHtml = (sale) => {
   const dateStr = new Date(sale.createdAt || Date.now()).toLocaleString("en-PK", {
@@ -8,6 +9,7 @@ export const generateReceiptHtml = (sale) => {
   });
 
   const customerName = sale.customer ? sale.customer.name : "Walk-in Customer";
+  const customerPhone = sale.customer?.phone ? ` (${sale.customer.phone})` : "";
   const cashierName = sale.user ? sale.user.name : "Cashier";
 
   const totalRefunded = (sale.returns || []).reduce((sum, r) => sum + (r.refundAmount || 0), 0);
@@ -29,16 +31,16 @@ export const generateReceiptHtml = (sale) => {
       return `
     <tr>
       <td style="text-align: left; padding: 3px 0;">
-        <strong>${item.product?.name || "Product"}</strong>
+        <strong>${item.product?.name || "Fabric Item"}</strong>
         ${
           hasItemDiscount
             ? `<br><span style="font-size: 9px; color: #444; font-style: italic;">Orig: PKR ${origPrice.toLocaleString()} (Disc: -PKR ${itemDiscPerUnit.toLocaleString()}/unit)</span>`
             : ""
         }
       </td>
-      <td style="text-align: center; padding: 3px 0; vertical-align: top;">${item.quantity} ${item.product?.unit?.symbol || ""}</td>
+      <td style="text-align: center; padding: 3px 0; vertical-align: top; font-weight: bold;">${item.quantity} ${item.product?.unit?.symbol || "pcs"}</td>
       <td style="text-align: right; padding: 3px 0; vertical-align: top;">${item.unitPrice.toLocaleString()}</td>
-      <td style="text-align: right; padding: 3px 0; vertical-align: top;">${item.subtotal.toLocaleString()}</td>
+      <td style="text-align: right; padding: 3px 0; vertical-align: top; font-weight: bold;">${item.subtotal.toLocaleString()}</td>
     </tr>
   `;
     })
@@ -64,12 +66,12 @@ export const generateReceiptHtml = (sale) => {
       background: #fff;
     }
     .text-center { text-align: center; }
-    .text-right { text-right: right; }
+    .text-right { text-align: right; }
     .text-left { text-align: left; }
-    .divider { border-top: 1px dashed #000; margin: 8px 0; }
-    .double-divider { border-top: 2px double #000; margin: 8px 0; }
-    .title { font-size: 16px; font-weight: bold; }
-    .subtitle { font-size: 11px; }
+    .divider { border-top: 1px dashed #000; margin: 6px 0; }
+    .double-divider { border-top: 2px double #000; margin: 6px 0; }
+    .title { font-size: 18px; font-weight: 900; letter-spacing: 1px; }
+    .subtitle { font-size: 10px; line-height: 1.3; }
     table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 11px; }
     th { border-bottom: 1px solid #000; padding: 4px 0; }
     .row { display: flex; justify-content: space-between; margin: 2px 0; }
@@ -82,8 +84,9 @@ export const generateReceiptHtml = (sale) => {
 <body>
   <div class="text-center">
     <div class="title">GM FABRICS</div>
-    <div class="subtitle">Main Bazar, Lahore</div>
-    <div class="subtitle">Tel: +92 300 1234567</div>
+    <div class="subtitle" style="font-weight: bold; font-size: 10px; margin-top: 2px;">Exclusive Ladies & Gents Suitings & Fabrics</div>
+    <div class="subtitle" style="margin-top: 2px;">Shop#2150, Near Fatima Pharmacy,<br>Malikpur Road, Nishatabad, Faisalabad</div>
+    <div class="subtitle" style="font-weight: bold; font-size: 11px; margin-top: 3px;">Tel: 0307 9728937</div>
   </div>
 
   ${
@@ -97,19 +100,19 @@ export const generateReceiptHtml = (sale) => {
   <div class="double-divider"></div>
 
   <div class="row"><span>Bill #:</span><span class="bold">${sale.saleNumber}</span></div>
-  <div class="row"><span>Date:</span><span>${dateStr}</span></div>
+  <div class="row"><span>Date & Time:</span><span>${dateStr}</span></div>
   <div class="row"><span>Cashier:</span><span>${cashierName}</span></div>
-  <div class="row"><span>Customer:</span><span>${customerName}</span></div>
+  <div class="row"><span>Customer:</span><span>${customerName}${customerPhone}</span></div>
 
   <div class="divider"></div>
 
   <table>
     <thead>
       <tr>
-        <th class="text-left">Item</th>
+        <th class="text-left">Fabric Item</th>
         <th class="text-center">Qty</th>
         <th class="text-right">Rate</th>
-        <th class="text-right">Amt</th>
+        <th class="text-right">Amount</th>
       </tr>
     </thead>
     <tbody>
@@ -127,7 +130,7 @@ export const generateReceiptHtml = (sale) => {
   }
   ${
     combinedTotalSavings > 0
-      ? `<div class="row savings-row"><span>YOU SAVED:</span><span>PKR ${combinedTotalSavings.toLocaleString()}</span></div>`
+      ? `<div class="row savings-row"><span>YOU SAVED TOTAL:</span><span>PKR ${combinedTotalSavings.toLocaleString()}</span></div>`
       : ""
   }
   
@@ -136,7 +139,7 @@ export const generateReceiptHtml = (sale) => {
   <div class="row ${totalRefunded > 0 ? '' : 'total-row'}"><span>Original Total:</span><span>PKR ${sale.totalAmount.toLocaleString()}</span></div>
   ${
     totalRefunded > 0
-      ? `<div class="row" style="color: #d97706; font-weight: bold;"><span>Total Returned:</span><span>- PKR ${totalRefunded.toLocaleString()}</span></div>
+      ? `<div class="row" style="color: #d97706; font-weight: bold;"><span>Total Refunded:</span><span>- PKR ${totalRefunded.toLocaleString()}</span></div>
          <div class="double-divider"></div>
          <div class="row total-row"><span>NET TOTAL:</span><span>PKR ${netAmount.toLocaleString()}</span></div>`
       : ""
@@ -144,17 +147,22 @@ export const generateReceiptHtml = (sale) => {
   
   <div class="divider"></div>
 
-  <div class="row"><span>Payment (${sale.paymentMethod}):</span><span>PKR ${sale.amountPaid.toLocaleString()}</span></div>
-  <div class="row"><span>Change:</span><span>PKR ${sale.changeAmount.toLocaleString()}</span></div>
+  <div class="row"><span>Payment Method:</span><span class="bold">${sale.paymentMethod}</span></div>
+  <div class="row"><span>Amount Tendered:</span><span>PKR ${(sale.amountPaid || sale.totalAmount).toLocaleString()}</span></div>
+  ${
+    sale.paymentMethod === "CASH"
+      ? `<div class="row"><span>Change Returned:</span><span>PKR ${(sale.changeAmount || 0).toLocaleString()}</span></div>`
+      : ""
+  }
 
   <div class="double-divider"></div>
 
-  <div class="text-center subtitle">
-    Thank you for shopping at GM Fabrics!<br>
-    Returns accepted within 7 days with receipt.
+  <div class="text-center subtitle" style="line-height: 1.4; margin-top: 4px;">
+    <strong>Thank you for shopping at GM Fabrics!</strong><br>
+    <span style="font-weight: bold; font-size: 11px;">*** Return in 7 days acceptable ***</span><br>
+    <span style="font-size: 9px; color: #444;">(With original sales receipt & un-cut fabric)</span>
   </div>
 </body>
 </html>
   `.trim();
 };
-

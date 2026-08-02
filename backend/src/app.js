@@ -21,7 +21,6 @@ import expenseCategoryRoutes from "./routes/expenseCategoryRoutes.js";
 import returnRoutes from "./routes/returnRoutes.js";
 import reportRoutes from "./routes/reportRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
-import aiRoutes from "./routes/aiRoutes.js";
 
 const app = express();
 
@@ -83,7 +82,6 @@ app.use("/api/expense-categories", expenseCategoryRoutes);
 app.use("/api/returns", returnRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/notifications", notificationRoutes);
-app.use("/api/ai", aiRoutes);
 
 // Global Error Handler
 app.use(errorHandler);

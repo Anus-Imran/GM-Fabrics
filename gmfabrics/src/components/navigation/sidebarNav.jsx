@@ -17,7 +17,6 @@ import {
   Receipt,
   RotateCcw,
   BarChart3,
-  Bot,
   LogOut,
   Sun,
   Moon,
@@ -92,7 +91,6 @@ export const SidebarNav = () => {
       group: "INTELLIGENCE",
       items: [
         { label: "Reports & Analytics", href: "/reports", icon: BarChart3 },
-        { label: "AI Business Agent", href: "/ai-assistant", icon: Bot, aiBadge: true },
       ],
     },
   ];

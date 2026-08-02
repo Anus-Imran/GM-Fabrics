@@ -291,14 +291,3 @@ model Notification {
   metadata  Json?
   createdAt DateTime @default(now())
 }
-
-// 17. AI Action Audit Logs
-model AiLog {
-  id         Int      @id @default(autoincrement())
-  agent      String
-  input      String?  @db.Text
-  output     String?  @db.Text
-  tokensUsed Int?
-  metadata   Json?
-  createdAt  DateTime @default(now())
-}

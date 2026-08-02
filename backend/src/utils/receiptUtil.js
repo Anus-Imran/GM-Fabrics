@@ -84,9 +84,8 @@ export const generateReceiptHtml = (sale) => {
 <body>
   <div class="text-center">
     <div class="title">GM FABRICS</div>
-    <div class="subtitle" style="font-weight: bold; font-size: 10px; margin-top: 2px;">Exclusive Ladies & Gents Suitings & Fabrics</div>
     <div class="subtitle" style="margin-top: 2px;">Shop#2150, Near Fatima Pharmacy,<br>Malikpur Road, Nishatabad, Faisalabad</div>
-    <div class="subtitle" style="font-weight: bold; font-size: 11px; margin-top: 3px;">Tel: 0307 9728937</div>
+    <div class="subtitle" style="font-weight: bold; font-size: 11px; margin-top: 3px;">Tel: 03079728937, 0303 7779080</div>
   </div>
 
   ${
@@ -159,7 +158,7 @@ export const generateReceiptHtml = (sale) => {
 
   <div class="text-center subtitle" style="line-height: 1.4; margin-top: 4px;">
     <strong>Thank you for shopping at GM Fabrics!</strong><br>
-    <span style="font-weight: bold; font-size: 11px;">*** Return in 7 days acceptable ***</span><br>
+    <span style="font-weight: bold; font-size: 11px;">Return in 7 days acceptable</span><br>
     <span style="font-size: 9px; color: #444;">(With original sales receipt & un-cut fabric)</span>
   </div>
 </body>

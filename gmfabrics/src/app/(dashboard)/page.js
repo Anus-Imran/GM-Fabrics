@@ -7,7 +7,6 @@ import { SalesChart } from "../../components/dashboard/salesChart.jsx";
 import { PaymentMethodChart } from "../../components/dashboard/paymentMethodChart.jsx";
 import { CategoryBarChart } from "../../components/dashboard/categoryBarChart.jsx";
 import { RecentSalesTable } from "../../components/dashboard/recentSalesTable.jsx";
-import { AiInsightPanel } from "../../components/dashboard/aiInsightPanel.jsx";
 import { Card, CardHeader } from "../../components/common/card.jsx";
 import { Button } from "../../components/common/button.jsx";
 import {
@@ -27,7 +26,6 @@ import {
   BarChart3,
   Calendar,
   Users,
-  Bot,
   Filter,
   TrendingDown,
 } from "lucide-react";
@@ -356,10 +354,10 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* 5. Main Charts Grid: Sales Trend & AI Insights */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* 5. Main Charts Grid: Financial Performance Trend */}
+      <div>
         {/* Sales & Financial Performance Trend Chart */}
-        <Card className="lg:col-span-2 shadow-xs border-zinc-200/80 dark:border-zinc-800">
+        <Card className="shadow-xs border-zinc-200/80 dark:border-zinc-800">
           <CardHeader
             title="Financial Performance Trend"
             subtitle={`Sales, Expenses & Net Profit analysis (${data?.period || period})`}
@@ -373,11 +371,6 @@ export default function DashboardPage() {
             <SalesChart data={data?.salesTrend || []} />
           </div>
         </Card>
-
-        {/* AI Business Assistant Panel */}
-        <div>
-          <AiInsightPanel />
-        </div>
       </div>
 
       {/* 6. Secondary Visual Charts: Payment Breakdown & Category Breakdown */}

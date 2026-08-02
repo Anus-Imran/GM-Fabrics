@@ -98,7 +98,8 @@ export const getDashboardKpis = async (params = {}) => {
   let totalStockItems = 0;
 
   activeBatches.forEach((b) => {
-    totalStockValue += b.remainingQuantity * (b.costPerUnit || 0);
+    const cost = b.costPrice ?? b.costPerUnit ?? 0;
+    totalStockValue += b.remainingQuantity * cost;
     totalStockItems += b.remainingQuantity;
   });
 
@@ -379,7 +380,8 @@ export const getInventoryReport = async () => {
 
     if (p.stockBatches && p.stockBatches.length > 0) {
       p.stockBatches.forEach((b) => {
-        costVal += b.remainingQuantity * (b.costPerUnit || 0);
+        const cost = b.costPrice ?? b.costPerUnit ?? 0;
+        costVal += b.remainingQuantity * cost;
         totalQty += b.remainingQuantity;
       });
     } else {

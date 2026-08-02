@@ -98,15 +98,37 @@ export const createReturn = async (data) => {
           },
         });
 
-        // Increment remainingQuantity on the latest batch for this product
-        const latestBatch = await tx.stockBatch.findFirst({
-          where: { productId: item.productId },
-          orderBy: { createdAt: "desc" },
-        });
+        // Find original sale item to target its exact batch lot
+        const originalSaleItem = sale.saleItems.find((si) => si.id === item.saleItemId);
+        let targetBatch = null;
 
-        if (latestBatch) {
+        if (originalSaleItem?.batchId) {
+          targetBatch = await tx.stockBatch.findUnique({
+            where: { id: originalSaleItem.batchId },
+          });
+        }
+
+        if (!targetBatch && originalSaleItem) {
+          // Fallback: Find matching batch by productId and costPrice
+          targetBatch = await tx.stockBatch.findFirst({
+            where: {
+              productId: item.productId,
+              costPrice: originalSaleItem.costPrice,
+            },
+            orderBy: { createdAt: "desc" },
+          });
+        }
+
+        if (!targetBatch) {
+          targetBatch = await tx.stockBatch.findFirst({
+            where: { productId: item.productId },
+            orderBy: { createdAt: "desc" },
+          });
+        }
+
+        if (targetBatch) {
           await tx.stockBatch.update({
-            where: { id: latestBatch.id },
+            where: { id: targetBatch.id },
             data: {
               remainingQuantity: { increment: item.quantity },
             },

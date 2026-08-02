@@ -191,6 +191,7 @@ export const createSale = async (userId, data) => {
               data: {
                 saleId: sale.id,
                 productId: item.productId,
+                batchId: batch.id,
                 quantity: take,
                 costPrice: batchCost,
                 unitPrice: item.unitPrice,
@@ -240,6 +241,7 @@ export const createSale = async (userId, data) => {
                 data: {
                   saleId: sale.id,
                   productId: item.productId,
+                  batchId: batch.id,
                   quantity: takeFromThisBatch,
                   costPrice: batchCost,
                   unitPrice: batchSelling,
@@ -265,24 +267,29 @@ export const createSale = async (userId, data) => {
           }
         }
 
-        const updatedStock = item.product.stockQuantity - item.quantity;
+        // Sync product main stockQuantity with active batch total
+        const batchSum = await tx.stockBatch.aggregate({
+          where: { productId: item.productId },
+          _sum: { remainingQuantity: true },
+        });
+        const currentStock = batchSum._sum.remainingQuantity ?? 0;
 
-        await tx.product.update({
+        const updatedProduct = await tx.product.update({
           where: { id: item.productId },
-          data: { stockQuantity: updatedStock },
+          data: { stockQuantity: currentStock },
         });
 
         // Check low stock alert trigger
-        if (updatedStock <= item.product.lowStockAlert) {
+        if (currentStock <= updatedProduct.lowStockAlert) {
           await tx.notification.create({
             data: {
               type: "LOW_STOCK",
               title: `Low Stock Alert: ${item.product.name}`,
-              message: `Current stock of ${item.product.name} is ${updatedStock} ${item.product.unit.symbol || item.product.unit.name}. Low stock threshold is ${item.product.lowStockAlert}.`,
+              message: `Current stock of ${item.product.name} is ${currentStock} ${item.product.unit?.symbol || item.product.unit?.name || "pcs"}. Low stock threshold is ${updatedProduct.lowStockAlert}.`,
               metadata: {
                 productId: item.productId,
-                currentStock: updatedStock,
-                threshold: item.product.lowStockAlert,
+                currentStock,
+                threshold: updatedProduct.lowStockAlert,
               },
             },
           });

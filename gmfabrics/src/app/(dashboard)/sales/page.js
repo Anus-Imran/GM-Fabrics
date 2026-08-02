@@ -53,6 +53,29 @@ export default function SalesPage() {
       ),
     },
     {
+      key: "itemsSummary",
+      label: "Products Sold",
+      render: (sale) => (
+        <div className="space-y-1.5 max-w-xs min-w-[200px]">
+          {sale.saleItems && sale.saleItems.length > 0 ? (
+            sale.saleItems.map((item, idx) => (
+              <div
+                key={idx}
+                className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 flex items-center justify-between gap-2 bg-zinc-100/80 dark:bg-zinc-800/80 px-2 py-1 rounded-lg border border-zinc-200/50 dark:border-zinc-700/50"
+              >
+                <span className="truncate">{item.product?.name || "Fabric Item"}</span>
+                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 font-mono shrink-0">
+                  {item.quantity} {item.product?.unit?.symbol || "pcs"}
+                </span>
+              </div>
+            ))
+          ) : (
+            <span className="text-zinc-400 text-xs">No items recorded</span>
+          )}
+        </div>
+      ),
+    },
+    {
       key: "customerName",
       label: "Customer",
       render: (sale) => sale.customerName,
@@ -135,10 +158,15 @@ export default function SalesPage() {
 
   const formattedSales = sales.map((s) => {
     const totalReturned = s.returns ? s.returns.reduce((sum, r) => sum + (r.refundAmount || 0), 0) : 0;
+    const itemsSummary = s.saleItems && s.saleItems.length > 0
+      ? s.saleItems.map((i) => `${i.product?.name || "Fabric Item"} (${i.quantity})`).join(", ")
+      : "";
+
     return {
       ...s,
       customerName: s.customer ? s.customer.name : "Walk-in Customer",
       cashierName: s.user?.name || "Cashier",
+      itemsSummary,
       totalReturned,
       netAmount: Math.max(0, s.totalAmount - totalReturned),
     };
@@ -159,7 +187,7 @@ export default function SalesPage() {
             title="Sales_History"
             columns={columns}
             data={formattedSales}
-            searchKeys={["saleNumber", "customerName", "cashierName", "paymentMethod", "status"]}
+            searchKeys={["saleNumber", "customerName", "cashierName", "itemsSummary", "paymentMethod", "status"]}
             dateKey="createdAt"
             enableSelection={false}
             enableDateFilter={true}

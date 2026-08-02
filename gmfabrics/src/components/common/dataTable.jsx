@@ -56,7 +56,7 @@ export const DataTable = ({
 
   // Filter Data (Search + Date Range)
   const filteredData = useMemo(() => {
-    let result = [...data];
+    let result = Array.isArray(data) ? [...data] : [];
 
     // 1. Date Range Filtering
     if (enableDateFilter && dateKey && dateRange !== "all") {

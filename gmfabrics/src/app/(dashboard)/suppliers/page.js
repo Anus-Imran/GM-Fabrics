@@ -27,9 +27,18 @@ export default function SuppliersPage() {
     setLoading(true);
     try {
       const res = await api.get("/suppliers");
-      if (res.data) setSuppliers(res.data);
+      let list = [];
+      if (Array.isArray(res)) {
+        list = res;
+      } else if (res && Array.isArray(res.data)) {
+        list = res.data;
+      } else if (res && Array.isArray(res.suppliers)) {
+        list = res.suppliers;
+      }
+      setSuppliers(list);
     } catch (err) {
       console.error(err);
+      setSuppliers([]);
     } finally {
       setLoading(false);
     }
@@ -153,10 +162,10 @@ export default function SuppliersPage() {
                 ),
               },
             ]}
-            data={suppliers.map((s) => ({
+            data={(Array.isArray(suppliers) ? suppliers : []).map((s) => ({
               ...s,
-              cityAddress: s.city ? `${s.city} ${s.address ? `(${s.address})` : ""}` : s.address || "",
-              purchasesCount: s._count?.stockEntries || 0,
+              cityAddress: s?.city ? `${s.city} ${s.address ? `(${s.address})` : ""}` : s?.address || "",
+              purchasesCount: s?._count?.stockEntries || 0,
             }))}
             searchKeys={["name", "phone", "city", "address"]}
             dateKey="createdAt"

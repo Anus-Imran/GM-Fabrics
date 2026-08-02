@@ -28,9 +28,18 @@ export default function CategoriesPage() {
     setLoading(true);
     try {
       const res = await api.get("/categories");
-      if (res.data) setCategories(res.data);
+      let list = [];
+      if (Array.isArray(res)) {
+        list = res;
+      } else if (res && Array.isArray(res.data)) {
+        list = res.data;
+      } else if (res && Array.isArray(res.categories)) {
+        list = res.categories;
+      }
+      setCategories(list);
     } catch (err) {
       console.error(err);
+      setCategories([]);
     } finally {
       setLoading(false);
     }

@@ -81,8 +81,8 @@ app.use("/api/notes", noteRoutes);
 // Global Error Handler
 app.use(errorHandler);
 
-// Start Server if main module
-if (process.env.NODE_ENV !== "test") {
+// Start Server if local execution (not Vercel serverless & not test)
+if (!process.env.VERCEL && process.env.NODE_ENV !== "test") {
   const PORT = envConfig.port;
   app.listen(PORT, () => {
     console.log(`==================================================`);

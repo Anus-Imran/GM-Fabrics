@@ -307,3 +307,16 @@ model Note {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 }
+
+// 18. Legacy AI Logs (Preserved)
+model AiLog {
+  id         Int      @id @default(autoincrement())
+  agent      String?
+  input      String?  @db.Text
+  output     String?  @db.Text
+  tokensUsed Int?     @default(0)
+  metadata   Json?
+  prompt     String?  @db.Text
+  response   String?  @db.Text
+  createdAt  DateTime @default(now())
+}

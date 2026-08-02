@@ -12,12 +12,9 @@ import {
   Edit3,
   AlertTriangle,
   Calendar,
-  Filter,
-  CheckSquare,
-  Tag,
-  Sparkles,
   LayoutGrid,
   List,
+  Loader2,
 } from "lucide-react";
 import api from "../../../services/apiService.js";
 import { Button } from "../../../components/common/button.jsx";
@@ -57,6 +54,10 @@ export default function NotesPage() {
     dueDate: "",
   });
   const [submitting, setSubmitting] = useState(false);
+
+  // Individual Action Loading States
+  const [togglingId, setTogglingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => {
     fetchNotes();
@@ -130,6 +131,8 @@ export default function NotesPage() {
   };
 
   const handleToggleComplete = async (note) => {
+    if (togglingId === note.id) return;
+    setTogglingId(note.id);
     try {
       // Optimistic update
       setNotes((prev) =>
@@ -143,16 +146,21 @@ export default function NotesPage() {
       console.error("Toggle note status error:", err);
       fetchNotes(); // Revert
       showToastError("Failed to update task status");
+    } finally {
+      setTogglingId(null);
     }
   };
 
   const handleDeleteNote = async (id) => {
+    if (deletingId === id) return;
+
     const isConfirmed = await confirmDelete(
       "Delete this Note?",
       "Are you sure you want to delete this note/task?"
     );
     if (!isConfirmed) return;
 
+    setDeletingId(id);
     try {
       await api.delete(`/notes/${id}`);
       showToastSuccess("Note deleted successfully");
@@ -160,6 +168,8 @@ export default function NotesPage() {
     } catch (err) {
       console.error("Delete note error:", err);
       showToastError("Failed to delete note");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -207,29 +217,27 @@ export default function NotesPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-full overflow-hidden">
       {/* Top Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-              <StickyNote className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-xl font-black text-zinc-900 dark:text-zinc-100 tracking-tight">
-                Notes & Shop To-Do Tasks
-              </h1>
-              <p className="text-xs text-zinc-500">
-                Keep track of fabric order notes, daily store reminders, customer requests & tasks
-              </p>
-            </div>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shrink-0">
+            <StickyNote className="w-6 h-6" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-xl font-black text-zinc-900 dark:text-zinc-100 tracking-tight truncate">
+              Notes & Shop To-Do Tasks
+            </h1>
+            <p className="text-xs text-zinc-500 truncate">
+              Keep track of fabric order notes, daily store reminders, customer requests & tasks
+            </p>
           </div>
         </div>
 
         <Button
           onClick={handleOpenAddModal}
           size="md"
-          className="flex items-center gap-2 font-bold shadow-md cursor-pointer shrink-0"
+          className="flex items-center justify-center gap-2 font-bold shadow-md cursor-pointer shrink-0 w-full sm:w-auto"
         >
           <Plus className="w-4 h-4" />
           <span>Add New Note / Task</span>
@@ -237,14 +245,14 @@ export default function NotesPage() {
       </div>
 
       {/* KPI Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Total Notes */}
         <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center justify-between">
           <div>
             <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Total Notes</p>
-            <h3 className="text-2xl font-black text-zinc-900 dark:text-zinc-100 mt-0.5">{totalNotes}</h3>
+            <h3 className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-zinc-100 mt-0.5">{totalNotes}</h3>
           </div>
-          <div className="p-3 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+          <div className="p-2.5 sm:p-3 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
             <StickyNote className="w-5 h-5" />
           </div>
         </div>
@@ -253,9 +261,9 @@ export default function NotesPage() {
         <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center justify-between">
           <div>
             <p className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Pending Tasks</p>
-            <h3 className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-0.5">{pendingNotes}</h3>
+            <h3 className="text-xl sm:text-2xl font-black text-amber-600 dark:text-amber-400 mt-0.5">{pendingNotes}</h3>
           </div>
-          <div className="p-3 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+          <div className="p-2.5 sm:p-3 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
             <Clock className="w-5 h-5" />
           </div>
         </div>
@@ -264,10 +272,10 @@ export default function NotesPage() {
         <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center justify-between">
           <div>
             <p className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Completed</p>
-            <h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5">{completedNotes}</h3>
+            <h3 className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5">{completedNotes}</h3>
             <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">{completionRate}% Done</p>
           </div>
-          <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+          <div className="p-2.5 sm:p-3 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
             <CheckCircle2 className="w-5 h-5" />
           </div>
         </div>
@@ -276,17 +284,17 @@ export default function NotesPage() {
         <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center justify-between">
           <div>
             <p className="text-[11px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">High Priority</p>
-            <h3 className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-0.5">{highPriorityNotes}</h3>
+            <h3 className="text-xl sm:text-2xl font-black text-rose-600 dark:text-rose-400 mt-0.5">{highPriorityNotes}</h3>
             <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">Needs Attention</p>
           </div>
-          <div className="p-3 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400">
+          <div className="p-2.5 sm:p-3 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400">
             <AlertTriangle className="w-5 h-5" />
           </div>
         </div>
       </div>
 
       {/* Control Bar: Search & Filters */}
-      <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
         {/* Search Input */}
         <div className="relative w-full md:w-80">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
@@ -341,7 +349,7 @@ export default function NotesPage() {
             <select
               value={priorityFilter}
               onChange={(e) => setPriorityFilter(e.target.value)}
-              className="text-xs py-1.5 px-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-100 font-bold focus:outline-none"
+              className="text-xs py-1.5 px-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-100 font-bold focus:outline-none cursor-pointer"
             >
               <option value="ALL">All Priorities</option>
               <option value="HIGH">🔥 High</option>
@@ -384,7 +392,7 @@ export default function NotesPage() {
           <Loader text="Loading your notes & tasks..." size="lg" />
         </div>
       ) : filteredNotes.length === 0 ? (
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl p-12 border border-zinc-200 dark:border-zinc-800 text-center space-y-3">
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl p-8 sm:p-12 border border-zinc-200 dark:border-zinc-800 text-center space-y-3">
           <div className="w-16 h-16 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center mx-auto text-zinc-400">
             <StickyNote className="w-8 h-8 stroke-1" />
           </div>
@@ -401,32 +409,37 @@ export default function NotesPage() {
         </div>
       ) : viewMode === "grid" ? (
         /* GRID VIEW */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredNotes.map((note) => {
             const isDone = note.isCompleted;
             const themeClass = getColorThemeClass(note.color);
+            const isToggling = togglingId === note.id;
+            const isDeleting = deletingId === note.id;
 
             return (
               <div
                 key={note.id}
-                className={`group relative rounded-2xl border p-5 transition-all duration-200 flex flex-col justify-between hover:shadow-lg ${themeClass} ${
+                className={`group relative rounded-2xl border p-4 sm:p-5 transition-all duration-200 flex flex-col justify-between hover:shadow-lg min-w-0 max-w-full overflow-hidden ${themeClass} ${
                   isDone ? "opacity-60 border-zinc-300 dark:border-zinc-800" : ""
                 }`}
               >
-                <div>
+                <div className="min-w-0">
                   {/* Card Header: Checkbox + Priority Badge + Controls */}
-                  <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex items-start justify-between gap-2.5 mb-3 min-w-0">
                     <button
                       onClick={() => handleToggleComplete(note)}
-                      className="flex items-center gap-2 cursor-pointer text-left group/check"
+                      disabled={isToggling}
+                      className="flex items-start gap-2 cursor-pointer text-left group/check min-w-0 flex-1"
                     >
-                      {isDone ? (
-                        <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      {isToggling ? (
+                        <Loader2 className="w-5 h-5 text-amber-600 dark:text-amber-400 animate-spin shrink-0 mt-0.5" />
+                      ) : isDone ? (
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
                       ) : (
-                        <Circle className="w-5 h-5 text-zinc-400 group-hover/check:text-zinc-700 dark:group-hover/check:text-zinc-200 transition-colors shrink-0" />
+                        <Circle className="w-5 h-5 text-zinc-400 group-hover/check:text-zinc-700 dark:group-hover/check:text-zinc-200 transition-colors shrink-0 mt-0.5" />
                       )}
                       <h4
-                        className={`text-sm font-bold tracking-tight line-clamp-2 ${
+                        className={`text-sm font-bold tracking-tight break-words [overflow-wrap:anywhere] break-all leading-tight ${
                           isDone ? "line-through text-zinc-500" : "text-zinc-900 dark:text-zinc-100"
                         }`}
                       >
@@ -445,10 +458,10 @@ export default function NotesPage() {
                     </div>
                   </div>
 
-                  {/* Content Body */}
+                  {/* Content Body with strict text wrapping */}
                   {note.content && (
                     <p
-                      className={`text-xs whitespace-pre-wrap leading-relaxed mb-4 ${
+                      className={`text-xs whitespace-pre-wrap leading-relaxed mb-4 break-words [overflow-wrap:anywhere] break-all overflow-hidden ${
                         isDone ? "line-through text-zinc-400" : "text-zinc-700 dark:text-zinc-300"
                       }`}
                     >
@@ -458,22 +471,22 @@ export default function NotesPage() {
                 </div>
 
                 {/* Card Footer: Metadata & Actions */}
-                <div className="pt-3 border-t border-zinc-900/10 dark:border-zinc-100/10 flex items-center justify-between text-[11px] text-zinc-500">
-                  <div className="flex items-center gap-3">
+                <div className="pt-3 border-t border-zinc-900/10 dark:border-zinc-100/10 flex items-center justify-between text-[11px] text-zinc-500 gap-2 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 text-[10px] sm:text-[11px]">
                     <span className="flex items-center gap-1 font-mono">
-                      <Calendar className="w-3.5 h-3.5 text-zinc-400" />
+                      <Calendar className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                       {formatDate(note.createdAt)}
                     </span>
                     {note.dueDate && (
                       <span className="flex items-center gap-1 font-bold text-amber-600 dark:text-amber-400 font-mono">
-                        <Clock className="w-3.5 h-3.5" />
+                        <Clock className="w-3.5 h-3.5 shrink-0" />
                         Due: {formatDate(note.dueDate)}
                       </span>
                     )}
                   </div>
 
                   {/* Actions */}
-                  <div className="flex items-center gap-1 opacity-90 group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-1 shrink-0">
                     <button
                       onClick={() => handleOpenEditModal(note)}
                       className="p-1.5 text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 rounded-lg cursor-pointer transition-colors"
@@ -483,10 +496,15 @@ export default function NotesPage() {
                     </button>
                     <button
                       onClick={() => handleDeleteNote(note.id)}
-                      className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-500/10 rounded-lg cursor-pointer transition-colors"
+                      disabled={isDeleting}
+                      className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-500/10 rounded-lg cursor-pointer transition-colors disabled:opacity-50"
                       title="Delete Note"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      {isDeleting ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-500" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5" />
+                      )}
                     </button>
                   </div>
                 </div>
@@ -499,20 +517,25 @@ export default function NotesPage() {
         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 divide-y divide-zinc-100 dark:divide-zinc-800 overflow-hidden shadow-sm">
           {filteredNotes.map((note) => {
             const isDone = note.isCompleted;
+            const isToggling = togglingId === note.id;
+            const isDeleting = deletingId === note.id;
 
             return (
               <div
                 key={note.id}
-                className={`p-4 flex items-center justify-between gap-4 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/40 ${
+                className={`p-4 flex items-center justify-between gap-4 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/40 min-w-0 ${
                   isDone ? "opacity-60 bg-zinc-50/50 dark:bg-zinc-950/30" : ""
                 }`}
               >
                 <div className="flex items-start gap-3 flex-1 min-w-0">
                   <button
                     onClick={() => handleToggleComplete(note)}
+                    disabled={isToggling}
                     className="mt-0.5 cursor-pointer text-zinc-400 hover:text-zinc-600 shrink-0"
                   >
-                    {isDone ? (
+                    {isToggling ? (
+                      <Loader2 className="w-5 h-5 text-amber-600 dark:text-amber-400 animate-spin" />
+                    ) : isDone ? (
                       <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                     ) : (
                       <Circle className="w-5 h-5" />
@@ -520,9 +543,9 @@ export default function NotesPage() {
                   </button>
 
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <h4
-                        className={`text-xs font-bold truncate ${
+                        className={`text-xs font-bold break-words [overflow-wrap:anywhere] break-all ${
                           isDone ? "line-through text-zinc-500" : "text-zinc-900 dark:text-zinc-100"
                         }`}
                       >
@@ -538,7 +561,7 @@ export default function NotesPage() {
                     </div>
                     {note.content && (
                       <p
-                        className={`text-[11px] truncate mt-0.5 ${
+                        className={`text-[11px] break-words [overflow-wrap:anywhere] break-all mt-0.5 ${
                           isDone ? "line-through text-zinc-400" : "text-zinc-500 dark:text-zinc-400"
                         }`}
                       >
@@ -549,7 +572,7 @@ export default function NotesPage() {
                 </div>
 
                 {/* Metadata & Actions */}
-                <div className="flex items-center gap-4 shrink-0">
+                <div className="flex items-center gap-3 shrink-0">
                   <span className="text-[10px] text-zinc-400 font-mono hidden sm:inline">
                     {formatDate(note.createdAt)}
                   </span>
@@ -562,9 +585,14 @@ export default function NotesPage() {
                     </button>
                     <button
                       onClick={() => handleDeleteNote(note.id)}
-                      className="p-1.5 text-zinc-400 hover:text-rose-600 rounded-lg cursor-pointer"
+                      disabled={isDeleting}
+                      className="p-1.5 text-zinc-400 hover:text-rose-600 rounded-lg cursor-pointer disabled:opacity-50"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      {isDeleting ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-rose-500" />
+                      ) : (
+                        <Trash2 className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
                 </div>
@@ -577,7 +605,7 @@ export default function NotesPage() {
       {/* Add / Edit Note Modal */}
       <Modal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => !submitting && setIsModalOpen(false)}
         title={editingNote ? "Edit Note / Task" : "Create New Note / Task"}
         maxWidth="max-w-lg"
       >
@@ -612,7 +640,7 @@ export default function NotesPage() {
           </div>
 
           {/* Priority & Color Picker */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 uppercase mb-1">
                 Priority Level
@@ -620,7 +648,7 @@ export default function NotesPage() {
               <select
                 value={formData.priority}
                 onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
-                className="w-full p-2.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-100 font-bold focus:ring-2 focus:ring-zinc-900"
+                className="w-full p-2.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-100 font-bold focus:ring-2 focus:ring-zinc-900 cursor-pointer"
               >
                 <option value="LOW">☕ Low Priority</option>
                 <option value="MEDIUM">⚡ Medium Priority</option>
@@ -646,20 +674,20 @@ export default function NotesPage() {
             <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 uppercase mb-1.5">
               Card Color Accent
             </label>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {COLOR_PRESETS.map((preset) => (
                 <button
                   type="button"
                   key={preset.id}
                   onClick={() => setFormData({ ...formData, color: preset.id })}
-                  className={`flex-1 py-2 px-1 rounded-xl border flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                  className={`flex-1 py-2 px-2 rounded-xl border flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
                     formData.color === preset.id
                       ? "ring-2 ring-zinc-900 dark:ring-zinc-100 font-bold scale-105"
                       : "opacity-70 hover:opacity-100"
                   } ${preset.bg}`}
                 >
                   <span className={`w-2.5 h-2.5 rounded-full ${preset.dot}`} />
-                  <span className="text-[10px] hidden sm:inline">{preset.id}</span>
+                  <span className="text-[10px] capitalize">{preset.id}</span>
                 </button>
               ))}
             </div>
@@ -670,11 +698,17 @@ export default function NotesPage() {
             <Button
               type="button"
               variant="outline"
+              disabled={submitting}
               onClick={() => setIsModalOpen(false)}
             >
               Cancel
             </Button>
-            <Button type="submit" loading={submitting} className="font-bold">
+            <Button
+              type="submit"
+              loading={submitting}
+              loadingText={editingNote ? "Updating Note..." : "Saving Note..."}
+              className="font-bold"
+            >
               {editingNote ? "Update Note" : "Save Note"}
             </Button>
           </div>

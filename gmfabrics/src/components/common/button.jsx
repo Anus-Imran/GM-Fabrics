@@ -1,4 +1,5 @@
 import React from "react";
+import { Loader2 } from "lucide-react";
 
 export const Button = ({
   children,
@@ -6,6 +7,8 @@ export const Button = ({
   variant = "primary", // "primary" | "secondary" | "outline" | "danger" | "ghost"
   size = "md", // "sm" | "md" | "lg"
   disabled = false,
+  loading = false,
+  loadingText,
   className = "",
   onClick,
   ...props
@@ -30,12 +33,19 @@ export const Button = ({
   return (
     <button
       type={type}
-      disabled={disabled}
+      disabled={disabled || loading}
       onClick={onClick}
       className={`${baseStyles} ${variants[variant]} ${sizes[size]} ${className}`}
       {...props}
     >
-      {children}
+      {loading ? (
+        <span className="inline-flex items-center justify-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+          <span>{loadingText || children || "Processing..."}</span>
+        </span>
+      ) : (
+        children
+      )}
     </button>
   );
 };

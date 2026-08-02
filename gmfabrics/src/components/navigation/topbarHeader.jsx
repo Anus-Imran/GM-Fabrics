@@ -35,14 +35,11 @@ export const TopbarHeader = () => {
 
   return (
     <header className="h-16 bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 px-6 flex items-center justify-between sticky top-0 z-30 shadow-2xs">
-      {/* Search Input */}
-      <div className="relative w-80">
-        <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input
-          type="text"
-          placeholder="Search catalog products or barcode..."
-          className="w-full pl-10 pr-4 py-2 text-xs bg-slate-100 dark:bg-zinc-800 border-none rounded-xl text-slate-900 dark:text-zinc-100 placeholder-slate-400 focus:outline-none focus:ring-0 transition-colors"
-        />
+      {/* Brand Title / Status */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">
+          GM Fabrics • POS Management Workspace
+        </span>
       </div>
 
       {/* Actions */}

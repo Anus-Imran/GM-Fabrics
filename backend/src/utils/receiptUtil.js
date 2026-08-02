@@ -158,7 +158,7 @@ export const generateReceiptHtml = (sale) => {
 
   <div class="text-center subtitle" style="line-height: 1.4; margin-top: 4px;">
     <strong>Thank you for shopping at GM Fabrics!</strong><br>
-    <span style="font-weight: bold; font-size: 11px;">Return in 7 days acceptable</span><br>
+    <span style="font-weight: bold; font-size: 11px;">Return & Change in 7 days acceptable</span><br>
     <span style="font-size: 9px; color: #444;">(With original sales receipt & un-cut fabric)</span>
   </div>
 </body>

@@ -12,6 +12,7 @@ export const StockEntryModal = ({ isOpen, onClose, onSubmit, products = [], supp
   const [quantity, setQuantity] = useState("");
   const [costPerUnit, setCostPerUnit] = useState("");
   const [newSalePrice, setNewSalePrice] = useState("");
+  const [customDate, setCustomDate] = useState("");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -43,6 +44,7 @@ export const StockEntryModal = ({ isOpen, onClose, onSubmit, products = [], supp
         quantity: qtyVal,
         costPerUnit: costVal,
         newSalePrice: newSalePrice ? parseFloat(newSalePrice) : null,
+        purchasedAt: customDate || null,
         notes,
       });
       onClose();
@@ -182,6 +184,21 @@ export const StockEntryModal = ({ isOpen, onClose, onSubmit, products = [], supp
               </span>
             </div>
           )}
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+            Purchase / Entry Date & Time (Optional)
+          </label>
+          <input
+            type="datetime-local"
+            value={customDate}
+            onChange={(e) => setCustomDate(e.target.value)}
+            className="w-full text-xs p-2.5 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none"
+          />
+          <p className="text-[10px] text-zinc-500 mt-1">
+            Leave blank to automatically apply current system date & time.
+          </p>
         </div>
 
         <Input

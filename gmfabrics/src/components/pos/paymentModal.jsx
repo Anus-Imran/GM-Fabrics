@@ -21,7 +21,12 @@ export const PaymentModal = ({ isOpen, onClose, onSaleSuccess }) => {
 
   const [paymentMethod, setPaymentMethod] = useState("CASH"); // "CASH" | "CARD" | "CREDIT"
   const [amountPaid, setAmountPaid] = useState("");
+  const [customDate, setCustomDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [isNewCustomer, setIsNewCustomer] = useState(false);
+  const [newCustName, setNewCustName] = useState("");
+  const [newCustPhone, setNewCustPhone] = useState("");
+  const [newCustCity, setNewCustCity] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -31,8 +36,8 @@ export const PaymentModal = ({ isOpen, onClose, onSaleSuccess }) => {
   const handleConfirmSale = async () => {
     setError("");
 
-    if (paymentMethod === "CREDIT" && !selectedCustomer) {
-      setError("Please select a customer for Khata / Credit sale.");
+    if (paymentMethod === "CREDIT" && !selectedCustomer && (!newCustName || !newCustName.trim())) {
+      setError("Please select an existing customer or enter New Customer Name for Khata / Credit sale.");
       return;
     }
 
@@ -45,6 +50,9 @@ export const PaymentModal = ({ isOpen, onClose, onSaleSuccess }) => {
     try {
       const payload = {
         customerId: selectedCustomer?.id || null,
+        customerName: newCustName.trim() || null,
+        customerPhone: newCustPhone.trim() || null,
+        customerCity: newCustCity.trim() || null,
         items: items.map((i) => ({
           productId: i.product.id,
           batchId: i.batch?.id || null,
@@ -55,12 +63,13 @@ export const PaymentModal = ({ isOpen, onClose, onSaleSuccess }) => {
         discountValue,
         paymentMethod,
         amountPaid: paymentMethod === "CASH" ? paidVal : totalAmount,
+        createdAt: customDate || null,
         notes,
       };
 
       const res = await api.post("/sales", payload);
       if (res.data) {
-        showToastSuccess("POS Sale completed & receipt generated!");
+        showToastSuccess("POS Sale completed & customer registered!");
         clearCart();
         onClose();
         if (onSaleSuccess) onSaleSuccess(res.data);
@@ -78,12 +87,77 @@ export const PaymentModal = ({ isOpen, onClose, onSaleSuccess }) => {
       <div className="space-y-5">
         {error && <div className="p-3 text-xs bg-red-50 text-red-600 rounded-lg border border-red-200">{error}</div>}
 
-        {/* Customer Badge */}
-        <div className="p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg text-xs flex justify-between items-center">
-          <span className="text-zinc-500">Customer Account:</span>
-          <span className="font-bold text-zinc-900 dark:text-zinc-100">
-            {selectedCustomer ? `${selectedCustomer.name} (${selectedCustomer.phone || "No Phone"})` : "Walk-in Customer"}
-          </span>
+        {/* Customer Information & Quick Add */}
+        <div className="p-3.5 bg-zinc-50 dark:bg-zinc-800/40 rounded-xl border border-zinc-200 dark:border-zinc-800 space-y-3">
+          <div className="flex justify-between items-center text-xs">
+            <span className="font-bold text-zinc-900 dark:text-zinc-100 uppercase tracking-wide">
+              Customer Account Details
+            </span>
+            {selectedCustomer ? (
+              <span className="font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
+                Selected: {selectedCustomer.name}
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsNewCustomer(!isNewCustomer)}
+                className="text-[11px] font-extrabold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+              >
+                {isNewCustomer ? "Cancel New Registration" : "+ Add New Customer Details"}
+              </button>
+            )}
+          </div>
+
+          {selectedCustomer ? (
+            <div className="text-xs text-zinc-600 dark:text-zinc-300 font-medium">
+              <span>{selectedCustomer.name}</span>
+              {selectedCustomer.phone && <span className="ml-2 opacity-75">({selectedCustomer.phone})</span>}
+              <span className="ml-3 font-bold text-amber-600 dark:text-amber-400">
+                Khata Balance: PKR {selectedCustomer.outstandingBalance || 0}
+              </span>
+            </div>
+          ) : isNewCustomer || paymentMethod === "CREDIT" ? (
+            <div className="space-y-2 pt-1">
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  value={newCustName}
+                  onChange={(e) => setNewCustName(e.target.value)}
+                  placeholder="Customer Name *"
+                  required={paymentMethod === "CREDIT"}
+                  className="w-full text-xs p-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none"
+                />
+                <input
+                  type="text"
+                  value={newCustPhone}
+                  onChange={(e) => setNewCustPhone(e.target.value)}
+                  placeholder="Phone Number (e.g. 03001234567)"
+                  className="w-full text-xs p-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none"
+                />
+              </div>
+              <input
+                type="text"
+                value={newCustCity}
+                onChange={(e) => setNewCustCity(e.target.value)}
+                placeholder="City / Address (Optional - e.g. Lahore / Anarkali Market)"
+                className="w-full text-xs p-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none"
+              />
+              <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                ✨ Customer will be automatically created in database upon sale completion.
+              </p>
+            </div>
+          ) : (
+            <div className="text-xs text-zinc-500 font-medium flex items-center justify-between">
+              <span>Walk-in Customer (Standard Cash Bill)</span>
+              <button
+                type="button"
+                onClick={() => setIsNewCustomer(true)}
+                className="text-[11px] text-emerald-600 font-bold hover:underline"
+              >
+                + Register Name & Phone
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Total Display */}
@@ -161,6 +235,22 @@ export const PaymentModal = ({ isOpen, onClose, onSaleSuccess }) => {
             </div>
           </div>
         )}
+
+        {/* Custom Transaction Date */}
+        <div>
+          <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+            Transaction Date & Time (Optional)
+          </label>
+          <input
+            type="datetime-local"
+            value={customDate}
+            onChange={(e) => setCustomDate(e.target.value)}
+            className="w-full text-xs p-2.5 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-900"
+          />
+          <p className="text-[10px] text-zinc-500 mt-1">
+            Leave blank to automatically apply current system date & time.
+          </p>
+        </div>
 
         {/* Notes */}
         <div>

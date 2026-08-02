@@ -121,6 +121,8 @@ export const createProduct = async (data) => {
   const cost = parseFloat(costPrice || 0);
   const selling = parseFloat(salePrice || 0);
 
+  const recordDate = data.createdAt || data.entryDate ? new Date(data.createdAt || data.entryDate) : new Date();
+
   return prisma.$transaction(async (tx) => {
     const product = await tx.product.create({
       data: {
@@ -136,6 +138,7 @@ export const createProduct = async (data) => {
         salePrice: selling,
         stockQuantity: initialStock,
         lowStockAlert: parseFloat(lowStockAlert || 10),
+        createdAt: recordDate,
       },
       include: {
         category: true,
@@ -154,6 +157,7 @@ export const createProduct = async (data) => {
           remainingQuantity: initialStock,
           costPrice: cost,
           sellingPrice: selling,
+          createdAt: recordDate,
         },
       });
     }

@@ -67,27 +67,68 @@ export const getSaleById = async (idOrNumber) => {
 export const createSale = async (userId, data) => {
   const {
     customerId,
+    newCustomer,
+    customerName,
+    customerPhone,
+    customerCity,
+    customerAddress,
     items, // array of { productId, quantity, unitPrice }
     discountType, // "PERCENTAGE" | "FLAT" | null
     discountValue, // number
     paymentMethod, // "CASH" | "CARD" | "CREDIT"
     amountPaid, // number
     notes,
+    createdAt,
+    saleDate,
   } = data;
+
+  const transactionDate = createdAt || saleDate ? new Date(createdAt || saleDate) : new Date();
 
   if (!items || !Array.isArray(items) || items.length === 0) {
     throw new Error("Sale must contain at least one item");
   }
 
-  const custId = customerId ? parseInt(customerId, 10) : null;
   const payMethod = paymentMethod || "CASH";
-
-  if (payMethod === "CREDIT" && !custId) {
-    throw new Error("Customer selection is required for CREDIT (Khata) payment");
-  }
 
   return prisma.$transaction(
     async (tx) => {
+      let finalCustomerId = customerId ? parseInt(customerId, 10) : null;
+
+      // Inline Auto-Registration of New Customer if details are provided
+      const inlineName = newCustomer?.name || customerName;
+      const inlinePhone = newCustomer?.phone || customerPhone;
+      const inlineCity = newCustomer?.city || customerCity;
+      const inlineAddress = newCustomer?.address || customerAddress;
+
+      if (!finalCustomerId && inlineName && inlineName.trim()) {
+        const cleanName = inlineName.trim();
+        const cleanPhone = inlinePhone ? inlinePhone.trim() : null;
+
+        let existingCust = null;
+        if (cleanPhone) {
+          existingCust = await tx.customer.findFirst({
+            where: { phone: cleanPhone },
+          });
+        }
+
+        if (existingCust) {
+          finalCustomerId = existingCust.id;
+        } else {
+          const createdCust = await tx.customer.create({
+            data: {
+              name: cleanName,
+              phone: cleanPhone || null,
+              city: inlineCity ? inlineCity.trim() : null,
+              address: inlineAddress ? inlineAddress.trim() : null,
+            },
+          });
+          finalCustomerId = createdCust.id;
+        }
+      }
+
+      if (payMethod === "CREDIT" && !finalCustomerId) {
+        throw new Error("Customer name or selection is required for CREDIT (Khata) payment");
+      }
       // 1. Calculate line item subtotals and check stock
       let subtotal = 0;
       const preparedItems = [];
@@ -155,7 +196,7 @@ export const createSale = async (userId, data) => {
       const sale = await tx.sale.create({
         data: {
           saleNumber,
-          customerId: custId,
+          customerId: finalCustomerId,
           userId,
           subtotal,
           discountType: discountType || null,
@@ -167,6 +208,7 @@ export const createSale = async (userId, data) => {
           changeAmount,
           status: "COMPLETED",
           notes: notes || null,
+          createdAt: transactionDate,
         },
       });
 
@@ -297,11 +339,11 @@ export const createSale = async (userId, data) => {
       }
 
       // 6. Update Customer Khata balance if CREDIT sale
-      if (payMethod === "CREDIT" && custId) {
-        const customer = await tx.customer.findUnique({ where: { id: custId } });
+      if (payMethod === "CREDIT" && finalCustomerId) {
+        const customer = await tx.customer.findUnique({ where: { id: finalCustomerId } });
         if (customer) {
           await tx.customer.update({
-            where: { id: custId },
+            where: { id: finalCustomerId },
             data: {
               outstandingBalance: customer.outstandingBalance + totalAmount,
             },

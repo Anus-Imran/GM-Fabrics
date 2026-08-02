@@ -47,6 +47,7 @@ export const ProductFormModal = ({
         salePrice: initialData.salePrice?.toString() || "0",
         stockQuantity: initialData.stockQuantity?.toString() || "0",
         lowStockAlert: initialData.lowStockAlert?.toString() || "10",
+        createdAt: "",
       });
     } else {
       setFormData({
@@ -62,6 +63,7 @@ export const ProductFormModal = ({
         salePrice: "0",
         stockQuantity: "0",
         lowStockAlert: "10",
+        createdAt: "",
       });
     }
   }, [initialData, categories, units, isOpen]);
@@ -226,6 +228,22 @@ export const ProductFormModal = ({
             onChange={handleChange}
             placeholder="10"
           />
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+            Record / Entry Date & Time (Optional)
+          </label>
+          <input
+            type="datetime-local"
+            name="createdAt"
+            value={formData.createdAt || ""}
+            onChange={handleChange}
+            className="w-full text-xs p-2.5 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none"
+          />
+          <p className="text-[10px] text-zinc-500 mt-1">
+            Leave blank to automatically apply current system date & time.
+          </p>
         </div>
 
         <div className="flex gap-3 pt-3">

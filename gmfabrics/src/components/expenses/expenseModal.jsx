@@ -9,7 +9,7 @@ export const ExpenseModal = ({ isOpen, onClose, onSubmit, categories = [] }) => 
   const [title, setTitle] = useState("");
   const [categoryId, setCategoryId] = useState(categories[0]?.id || "");
   const [amount, setAmount] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [date, setDate] = useState("");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");

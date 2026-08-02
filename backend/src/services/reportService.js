@@ -104,11 +104,11 @@ export const getDashboardKpis = async (params = {}) => {
 
   const productsWithStock = await prisma.product.findMany({
     where: { isActive: true, stockQuantity: { gt: 0 } },
-    include: { batches: { where: { remainingQuantity: { gt: 0 } } } },
+    include: { stockBatches: { where: { remainingQuantity: { gt: 0 } } } },
   });
 
   productsWithStock.forEach((p) => {
-    if (!p.batches || p.batches.length === 0) {
+    if (!p.stockBatches || p.stockBatches.length === 0) {
       totalStockValue += p.stockQuantity * (p.costPrice || 0);
       totalStockItems += p.stockQuantity;
     }
@@ -364,7 +364,7 @@ export const getInventoryReport = async () => {
       brand: true,
       unit: true,
       supplier: true,
-      batches: { where: { remainingQuantity: { gt: 0 } } },
+      stockBatches: { where: { remainingQuantity: { gt: 0 } } },
     },
     orderBy: { name: "asc" },
   });
@@ -377,8 +377,8 @@ export const getInventoryReport = async () => {
     let costVal = 0;
     let totalQty = 0;
 
-    if (p.batches && p.batches.length > 0) {
-      p.batches.forEach((b) => {
+    if (p.stockBatches && p.stockBatches.length > 0) {
+      p.stockBatches.forEach((b) => {
         costVal += b.remainingQuantity * (b.costPerUnit || 0);
         totalQty += b.remainingQuantity;
       });

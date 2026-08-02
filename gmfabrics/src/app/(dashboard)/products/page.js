@@ -103,8 +103,9 @@ export default function ProductsPage() {
 
   const totalStockQty = products.reduce((sum, p) => sum + (parseFloat(p.stockQuantity) || 0), 0);
   const totalStockValue = products.reduce((sum, p) => {
-    if (p.batches && p.batches.length > 0) {
-      const bSum = p.batches.reduce((bAcc, b) => bAcc + (b.remainingQuantity * (b.costPerUnit || 0)), 0);
+    const activeBatches = p.stockBatches || p.batches || [];
+    if (activeBatches && activeBatches.length > 0) {
+      const bSum = activeBatches.reduce((bAcc, b) => bAcc + (b.remainingQuantity * (b.costPerUnit || 0)), 0);
       return sum + bSum;
     }
     return sum + ((parseFloat(p.stockQuantity) || 0) * (parseFloat(p.costPrice) || 0));

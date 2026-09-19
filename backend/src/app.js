@@ -27,32 +27,29 @@ import backupRoutes from "./routes/backupRoutes.js";
 const app = express();
 
 // Dynamic CORS Middleware supporting Vercel previews, production domains, and localhost
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS,PATCH");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With,Accept,X-Api-Version");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+  next();
+});
+
 app.use(
   cors({
-    origin: (origin, callback) => {
-      // Allow non-browser requests (Postman, curl, server-to-server)
-      if (!origin) return callback(null, true);
-
-      // Allow any localhost, vercel.app subdomains, or custom frontend URL
-      if (
-        origin.startsWith("http://localhost") ||
-        origin.endsWith(".vercel.app") ||
-        origin === envConfig.frontendUrl
-      ) {
-        return callback(null, true);
-      }
-
-      // Default allow for seamless Vercel deployments
-      return callback(null, true);
-    },
+    origin: true,
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
   })
 );
-
-// Explicit OPTIONS Preflight handler
-app.options("*", cors());
 
 app.use(morgan("dev"));
 app.use(express.json({ limit: "10mb" }));
@@ -90,8 +87,8 @@ app.use("/api/backup", backupRoutes);
 // Global Error Handler
 app.use(errorHandler);
 
-// Start Server if main module
-if (process.env.NODE_ENV !== "test") {
+// Start Server if main local process (Skip in Vercel Serverless environment)
+if (process.env.NODE_ENV !== "test" && !process.env.VERCEL) {
   const PORT = envConfig.port;
   app.listen(PORT, () => {
     console.log(`==================================================`);

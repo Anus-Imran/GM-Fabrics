@@ -1,9 +1,6 @@
 import * as XLSX from "xlsx";
-import { createRequire } from "module";
+import JSZip from "jszip";
 import { prisma } from "../config/prisma.js";
-
-const require = createRequire(import.meta.url);
-const archiver = require("archiver");
 
 /**
  * Fetch and format all database tables
@@ -210,31 +207,22 @@ export const exportAsExcel = async () => {
 export const exportAsCsvZip = async () => {
   const tables = await getAllTablesData();
   const dateStr = new Date().toISOString().split("T")[0];
+  const zip = new JSZip();
 
-  return new Promise((resolve, reject) => {
-    const archive = archiver("zip", { zlib: { level: 9 } });
-    const chunks = [];
+  for (const [tableName, rows] of Object.entries(tables)) {
+    const safeRows = rows.length > 0 ? rows : [{ "No Records": "No data found for this table" }];
+    const worksheet = XLSX.utils.json_to_sheet(safeRows);
+    const csvContent = XLSX.utils.sheet_to_csv(worksheet);
+    zip.file(`${tableName}.csv`, csvContent);
+  }
 
-    archive.on("data", (chunk) => chunks.push(chunk));
-    archive.on("end", () => {
-      const zipBuffer = Buffer.concat(chunks);
-      resolve({
-        buffer: zipBuffer,
-        contentType: "application/zip",
-        filename: `GM_Fabrics_All_Tables_CSV_${dateStr}.zip`,
-      });
-    });
-    archive.on("error", (err) => reject(err));
+  const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
 
-    for (const [tableName, rows] of Object.entries(tables)) {
-      const safeRows = rows.length > 0 ? rows : [{ "No Records": "No data found for this table" }];
-      const worksheet = XLSX.utils.json_to_sheet(safeRows);
-      const csvContent = XLSX.utils.sheet_to_csv(worksheet);
-      archive.append(csvContent, { name: `${tableName}.csv` });
-    }
-
-    archive.finalize();
-  });
+  return {
+    buffer: zipBuffer,
+    contentType: "application/zip",
+    filename: `GM_Fabrics_All_Tables_CSV_${dateStr}.zip`,
+  };
 };
 
 /**

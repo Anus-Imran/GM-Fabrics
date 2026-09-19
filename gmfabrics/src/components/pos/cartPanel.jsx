@@ -121,8 +121,8 @@ export const CartPanel = ({ customers = [], onOpenCheckout }) => {
                     </label>
                     <input
                       type="number"
-                      step={item.product.unit?.allowDecimal !== false ? "0.01" : "1"}
-                      min="0.01"
+                      step={item.product.unit?.allowDecimal !== false ? "any" : "1"}
+                      min="0.001"
                       value={item.quantity}
                       onChange={(e) => updateQuantity(item.cartItemId, e.target.value)}
                       className="w-full px-1.5 py-1 text-xs font-bold bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded text-zinc-900 dark:text-zinc-100 focus:ring-1 focus:ring-zinc-900 text-center"
@@ -136,6 +136,7 @@ export const CartPanel = ({ customers = [], onOpenCheckout }) => {
                     </label>
                     <input
                       type="number"
+                      step="any"
                       min="0"
                       placeholder="0"
                       value={item.customDiscount || ""}
@@ -151,6 +152,7 @@ export const CartPanel = ({ customers = [], onOpenCheckout }) => {
                     </label>
                     <input
                       type="number"
+                      step="any"
                       min="0"
                       value={item.unitPrice}
                       onChange={(e) => updateUnitPrice(item.cartItemId, e.target.value)}

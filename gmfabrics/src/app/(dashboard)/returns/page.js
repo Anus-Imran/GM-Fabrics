@@ -398,7 +398,7 @@ function ReturnsContent() {
                         <span className="text-[10px] text-zinc-400">Return Qty:</span>
                         <input
                           type="number"
-                          step={si.product.unit?.allowDecimal !== false ? "0.01" : "1"}
+                          step={si.product.unit?.allowDecimal !== false ? "any" : "1"}
                           min="0"
                           max={si.quantity}
                           value={returnQtyMap[si.id] || 0}

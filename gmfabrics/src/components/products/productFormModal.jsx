@@ -191,7 +191,7 @@ export const ProductFormModal = ({
           <Input
             label="Cost Price per Unit (PKR)"
             type="number"
-            step="0.01"
+            step="any"
             name="costPrice"
             value={formData.costPrice}
             onChange={handleChange}
@@ -200,7 +200,7 @@ export const ProductFormModal = ({
           <Input
             label="Selling Price per Unit (PKR)"
             type="number"
-            step="0.01"
+            step="any"
             name="salePrice"
             value={formData.salePrice}
             onChange={handleChange}
@@ -213,7 +213,7 @@ export const ProductFormModal = ({
           <Input
             label="Initial Stock Qty"
             type="number"
-            step="0.01"
+            step="any"
             name="stockQuantity"
             value={formData.stockQuantity}
             onChange={handleChange}
@@ -222,7 +222,7 @@ export const ProductFormModal = ({
           <Input
             label="Low Stock Alert Threshold"
             type="number"
-            step="0.01"
+            step="any"
             name="lowStockAlert"
             value={formData.lowStockAlert}
             onChange={handleChange}

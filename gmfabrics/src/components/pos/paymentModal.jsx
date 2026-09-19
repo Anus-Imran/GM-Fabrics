@@ -288,6 +288,7 @@ export const PaymentModal = ({ isOpen, onClose, onSaleSuccess }) => {
                     </label>
                     <input
                       type="number"
+                      step="any"
                       value={amountPaid}
                       onChange={(e) => setAmountPaid(e.target.value)}
                       placeholder={totalAmount.toString()}

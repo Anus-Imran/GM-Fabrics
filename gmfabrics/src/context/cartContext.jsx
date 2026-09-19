@@ -3,6 +3,8 @@
 import React, { createContext, useContext, useState, useMemo } from "react";
 import { showErrorAlert, showToastError } from "../utils/alerts.js";
 
+const roundMoney = (v) => Math.round((parseFloat(v) || 0) * 100) / 100;
+
 const CartContext = createContext();
 
 export const CartProvider = ({ children }) => {
@@ -28,12 +30,17 @@ export const CartProvider = ({ children }) => {
   const [notes, setNotes] = useState("");
 
   const addToCart = (product, quantity = 1) => {
+    if (!product || !product.isActive) {
+      showToastError("Cannot add inactive product to cart.");
+      return;
+    }
+
     const availableStock = parseFloat(product.stockQuantity) || 0;
 
     if (availableStock <= 0) {
       showErrorAlert(
-        "Out of Stock!",
-        `"${product.name}" is out of stock (${availableStock} available). Cannot add to current bill.`
+        "Out of Stock",
+        `"${product.name}" has 0 stock remaining and cannot be added to cart.`
       );
       return;
     }
@@ -76,11 +83,11 @@ export const CartProvider = ({ children }) => {
       const otherItems = prevItems.filter((i) => i.product.id !== product.id);
 
       if (activeBatches.length === 0) {
-        const basePrice = Math.round(product.salePrice || 0);
+        const basePrice = parseFloat(product.salePrice || 0);
         const existingDefault = existingProductItems.find((i) => i.cartItemId === `${product.id}_default`);
-        const disc = existingDefault ? existingDefault.customDiscount : 0;
-        const uPrice = Math.max(0, basePrice - disc);
-        const subtotal = Math.round(newTotalQty * uPrice);
+        const disc = existingDefault ? parseFloat(existingDefault.customDiscount || 0) : 0;
+        const uPrice = roundMoney(Math.max(0, basePrice - disc));
+        const subtotal = roundMoney(newTotalQty * uPrice);
 
         return [
           ...otherItems,
@@ -105,13 +112,13 @@ export const CartProvider = ({ children }) => {
         if (remainingToAllocate <= 0) break;
         const b = activeBatches[idx];
         const take = Math.min(b.remainingQuantity, remainingToAllocate);
-        const basePrice = Math.round(b.sellingPrice > 0 ? b.sellingPrice : (product.salePrice || 0));
+        const basePrice = parseFloat(b.sellingPrice > 0 ? b.sellingPrice : (product.salePrice || 0));
         const cartItemId = `${product.id}_batch_${b.id}`;
 
         const existingBatchItem = existingProductItems.find((i) => i.cartItemId === cartItemId);
-        const disc = existingBatchItem ? existingBatchItem.customDiscount : 0;
-        const uPrice = Math.max(0, basePrice - disc);
-        const subtotal = Math.round(take * uPrice);
+        const disc = existingBatchItem ? parseFloat(existingBatchItem.customDiscount || 0) : 0;
+        const uPrice = roundMoney(Math.max(0, basePrice - disc));
+        const subtotal = roundMoney(take * uPrice);
 
         allocatedItems.push({
           cartItemId,
@@ -129,12 +136,12 @@ export const CartProvider = ({ children }) => {
       }
 
       if (remainingToAllocate > 0) {
-        const basePrice = Math.round(product.salePrice || 0);
+        const basePrice = parseFloat(product.salePrice || 0);
         const cartItemId = `${product.id}_excess`;
         const existingExcess = existingProductItems.find((i) => i.cartItemId === cartItemId);
-        const disc = existingExcess ? existingExcess.customDiscount : 0;
-        const uPrice = Math.max(0, basePrice - disc);
-        const subtotal = Math.round(remainingToAllocate * uPrice);
+        const disc = existingExcess ? parseFloat(existingExcess.customDiscount || 0) : 0;
+        const uPrice = roundMoney(Math.max(0, basePrice - disc));
+        const subtotal = roundMoney(remainingToAllocate * uPrice);
 
         allocatedItems.push({
           cartItemId,
@@ -195,15 +202,15 @@ export const CartProvider = ({ children }) => {
       const otherProductItems = prevItems.filter((i) => i.product.id !== product.id);
 
       if (activeBatches.length === 0) {
-        const basePrice = Math.round(product.salePrice || 0);
-        const uPrice = Math.max(0, basePrice - targetItem.customDiscount);
+        const basePrice = parseFloat(product.salePrice || 0);
+        const uPrice = roundMoney(Math.max(0, basePrice - targetItem.customDiscount));
         return [
           ...otherProductItems,
           {
             ...targetItem,
             quantity: qty,
             unitPrice: uPrice,
-            subtotal: Math.round(qty * uPrice),
+            subtotal: roundMoney(qty * uPrice),
           },
         ];
       }
@@ -215,12 +222,12 @@ export const CartProvider = ({ children }) => {
         if (remainingToAllocate <= 0) break;
         const b = activeBatches[idx];
         const take = Math.min(b.remainingQuantity, remainingToAllocate);
-        const basePrice = Math.round(b.sellingPrice > 0 ? b.sellingPrice : (product.salePrice || 0));
+        const basePrice = parseFloat(b.sellingPrice > 0 ? b.sellingPrice : (product.salePrice || 0));
         const cItemId = `${product.id}_batch_${b.id}`;
 
         const existingItem = prevItems.find((i) => i.cartItemId === cItemId);
-        const disc = existingItem ? existingItem.customDiscount : 0;
-        const uPrice = Math.max(0, basePrice - disc);
+        const disc = existingItem ? parseFloat(existingItem.customDiscount || 0) : 0;
+        const uPrice = roundMoney(Math.max(0, basePrice - disc));
 
         allocatedItems.push({
           cartItemId: cItemId,
@@ -231,18 +238,18 @@ export const CartProvider = ({ children }) => {
           quantity: take,
           customDiscount: disc,
           unitPrice: uPrice,
-          subtotal: Math.round(take * uPrice),
+          subtotal: roundMoney(take * uPrice),
         });
 
         remainingToAllocate -= take;
       }
 
       if (remainingToAllocate > 0) {
-        const basePrice = Math.round(product.salePrice || 0);
+        const basePrice = parseFloat(product.salePrice || 0);
         const cItemId = `${product.id}_excess`;
         const existingExcess = prevItems.find((i) => i.cartItemId === cItemId);
-        const disc = existingExcess ? existingExcess.customDiscount : 0;
-        const uPrice = Math.max(0, basePrice - disc);
+        const disc = existingExcess ? parseFloat(existingExcess.customDiscount || 0) : 0;
+        const uPrice = roundMoney(Math.max(0, basePrice - disc));
 
         allocatedItems.push({
           cartItemId: cItemId,
@@ -253,7 +260,7 @@ export const CartProvider = ({ children }) => {
           quantity: remainingToAllocate,
           customDiscount: disc,
           unitPrice: uPrice,
-          subtotal: Math.round(remainingToAllocate * uPrice),
+          subtotal: roundMoney(remainingToAllocate * uPrice),
         });
       }
 
@@ -267,8 +274,8 @@ export const CartProvider = ({ children }) => {
     setItems((prevItems) =>
       prevItems.map((item) => {
         if (item.cartItemId === cartItemId) {
-          const uPrice = Math.max(0, item.basePrice - disc);
-          const subtotal = Math.round(item.quantity * uPrice);
+          const uPrice = roundMoney(Math.max(0, item.basePrice - disc));
+          const subtotal = roundMoney(item.quantity * uPrice);
 
           return {
             ...item,
@@ -288,8 +295,8 @@ export const CartProvider = ({ children }) => {
     setItems((prevItems) =>
       prevItems.map((item) => {
         if (item.cartItemId === cartItemId) {
-          const disc = Math.max(0, item.basePrice - rate);
-          const subtotal = Math.round(item.quantity * rate);
+          const disc = roundMoney(Math.max(0, item.basePrice - rate));
+          const subtotal = roundMoney(item.quantity * rate);
 
           return {
             ...item,
@@ -318,27 +325,27 @@ export const CartProvider = ({ children }) => {
   };
 
   const subtotal = useMemo(() => {
-    return Math.round(items.reduce((sum, item) => sum + item.subtotal, 0));
+    return roundMoney(items.reduce((sum, item) => sum + item.subtotal, 0));
   }, [items]);
 
   const discountAmount = useMemo(() => {
     const val = parseFloat(discountValue) || 0;
     if (discountType === "PERCENTAGE" && val > 0) {
-      return Math.round((subtotal * val) / 100);
+      return roundMoney((subtotal * val) / 100);
     }
     if (discountType === "FLAT" && val > 0) {
-      return Math.round(Math.min(val, subtotal));
+      return roundMoney(Math.min(val, subtotal));
     }
     return 0;
   }, [subtotal, discountType, discountValue]);
 
   const totalAmount = useMemo(() => {
-    return Math.round(Math.max(0, subtotal - discountAmount));
+    return roundMoney(Math.max(0, subtotal - discountAmount));
   }, [subtotal, discountAmount]);
 
   const changeAmount = useMemo(() => {
     const paid = parseFloat(amountPaid) || 0;
-    return Math.round(Math.max(0, paid - totalAmount));
+    return roundMoney(Math.max(0, paid - totalAmount));
   }, [amountPaid, totalAmount]);
 
   return (

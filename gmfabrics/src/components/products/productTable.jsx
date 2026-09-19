@@ -51,7 +51,7 @@ export const ProductTable = ({ products = [], onEdit, onDelete, onDeleteSelected
         return (
           <div className="font-semibold">
             <span className={isLowStock ? "text-amber-600 font-bold" : "text-zinc-900 dark:text-zinc-100"}>
-              {prod.stockQuantity} {prod.unitSymbol}
+              {Number(prod.stockQuantity)} {prod.unitSymbol}
             </span>
             {isLowStock && (
               <Badge variant="warning" className="ml-2">

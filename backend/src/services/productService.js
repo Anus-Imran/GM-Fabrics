@@ -183,15 +183,132 @@ export const updateProduct = async (id, data) => {
   if (data.stockQuantity !== undefined) updateData.stockQuantity = parseFloat(data.stockQuantity);
   if (data.lowStockAlert !== undefined) updateData.lowStockAlert = parseFloat(data.lowStockAlert);
 
-  return prisma.product.update({
-    where: { id: productId },
-    data: updateData,
-    include: {
-      category: true,
-      brand: true,
-      unit: true,
-      supplier: true,
-    },
+  return prisma.$transaction(async (tx) => {
+    // 1. Fetch current product and all associated stock batches
+    const currentProduct = await tx.product.findUnique({
+      where: { id: productId },
+      include: {
+        stockBatches: {
+          orderBy: { createdAt: "desc" },
+        },
+      },
+    });
+
+    if (!currentProduct) throw new Error("Product not found");
+
+    // 2. Update Product record
+    const updatedProduct = await tx.product.update({
+      where: { id: productId },
+      data: updateData,
+      include: {
+        category: true,
+        brand: true,
+        unit: true,
+        supplier: true,
+      },
+    });
+
+    // 3. Synchronize StockBatch records to prevent inventory and valuation drift
+    const newQty = updateData.stockQuantity !== undefined ? updateData.stockQuantity : currentProduct.stockQuantity;
+    const newCost = updateData.costPrice !== undefined ? updateData.costPrice : (currentProduct.costPrice || 0);
+    const newSale = updateData.salePrice !== undefined ? updateData.salePrice : (currentProduct.salePrice || 0);
+
+    const batches = currentProduct.stockBatches || [];
+    const currentBatchSum = batches.reduce((sum, b) => sum + (b.remainingQuantity || 0), 0);
+
+    if (updateData.stockQuantity !== undefined) {
+      const diff = newQty - currentBatchSum;
+
+      if (batches.length === 0) {
+        if (newQty > 0) {
+          await tx.stockBatch.create({
+            data: {
+              productId,
+              initialQuantity: newQty,
+              remainingQuantity: newQty,
+              costPrice: newCost,
+              sellingPrice: newSale,
+            },
+          });
+        }
+      } else if (batches.length === 1) {
+        // Single batch (direct creation lot)
+        const singleBatch = batches[0];
+        const newRemaining = Math.max(0, newQty);
+        await tx.stockBatch.update({
+          where: { id: singleBatch.id },
+          data: {
+            remainingQuantity: newRemaining,
+            initialQuantity: Math.max(singleBatch.initialQuantity, newRemaining),
+            ...(updateData.costPrice !== undefined ? { costPrice: newCost } : {}),
+            ...(updateData.salePrice !== undefined ? { sellingPrice: newSale } : {}),
+          },
+        });
+      } else {
+        // Multiple lots exist
+        if (diff < 0) {
+          let toDeduct = Math.abs(diff);
+          for (const batch of batches) {
+            if (toDeduct <= 0) break;
+            if ((batch.remainingQuantity || 0) <= 0) continue;
+            const take = Math.min(batch.remainingQuantity, toDeduct);
+            await tx.stockBatch.update({
+              where: { id: batch.id },
+              data: { remainingQuantity: batch.remainingQuantity - take },
+            });
+            toDeduct -= take;
+          }
+        } else if (diff > 0) {
+          const latestBatch = batches[0];
+          await tx.stockBatch.update({
+            where: { id: latestBatch.id },
+            data: {
+              initialQuantity: latestBatch.initialQuantity + diff,
+              remainingQuantity: latestBatch.remainingQuantity + diff,
+            },
+          });
+        }
+
+        // Synchronize costPrice on initial batch if updated
+        if (updateData.costPrice !== undefined) {
+          const initialBatch = batches.find((b) => !b.stockEntryId);
+          if (initialBatch) {
+            await tx.stockBatch.update({
+              where: { id: initialBatch.id },
+              data: { costPrice: newCost },
+            });
+          }
+        }
+      }
+    } else {
+      // Stock quantity was not changed, but cost or sale price might have changed
+      if (batches.length === 1 && (updateData.costPrice !== undefined || updateData.salePrice !== undefined)) {
+        await tx.stockBatch.update({
+          where: { id: batches[0].id },
+          data: {
+            ...(updateData.costPrice !== undefined ? { costPrice: newCost } : {}),
+            ...(updateData.salePrice !== undefined ? { sellingPrice: newSale } : {}),
+          },
+        });
+      } else if (batches.length > 1 && updateData.costPrice !== undefined) {
+        const initialBatch = batches.find((b) => !b.stockEntryId);
+        if (initialBatch) {
+          await tx.stockBatch.update({
+            where: { id: initialBatch.id },
+            data: { costPrice: newCost },
+          });
+        }
+      }
+    }
+
+    // Attach active stockBatches to returned object
+    const finalBatches = await tx.stockBatch.findMany({
+      where: { productId, remainingQuantity: { gt: 0 } },
+      orderBy: { createdAt: "asc" },
+    });
+    updatedProduct.stockBatches = finalBatches;
+
+    return updatedProduct;
   });
 };
 

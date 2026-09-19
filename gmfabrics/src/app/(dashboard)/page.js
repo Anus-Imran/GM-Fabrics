@@ -28,11 +28,18 @@ import {
   Users,
   Filter,
   TrendingDown,
+  Download,
+  FileSpreadsheet,
+  FileArchive,
+  Trash2,
+  ChevronDown,
 } from "lucide-react";
 import { formatCurrency } from "../../utils/formatCurrency.js";
+import { showToastSuccess, showToastError } from "../../utils/alerts.js";
 import { useAuth } from "../../context/authContext.jsx";
 import api from "../../services/apiService.js";
 import { Loader } from "../../components/common/loader.jsx";
+import { ResetDatabaseModal } from "../../components/dashboard/resetDatabaseModal.jsx";
 
 export default function DashboardPage() {
   const [data, setData] = useState(null);
@@ -40,6 +47,9 @@ export default function DashboardPage() {
   const [period, setPeriod] = useState("all_time");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const { user } = useAuth();
 
   useEffect(() => {
@@ -69,6 +79,53 @@ export default function DashboardPage() {
     e.preventDefault();
     if (customStart && customEnd) {
       fetchKpis("custom", customStart, customEnd);
+    }
+  };
+
+  const handleExport = async (format) => {
+    setExportDropdownOpen(false);
+    setExporting(true);
+    try {
+      const token = typeof window !== "undefined" ? localStorage.getItem("gmfabrics_token") : null;
+      const baseUrl =
+        typeof window !== "undefined" &&
+        (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+          ? (process.env.NEXT_PUBLIC_API_URL && !process.env.NEXT_PUBLIC_API_URL.includes("vercel.app")
+              ? process.env.NEXT_PUBLIC_API_URL
+              : "http://localhost:5000/api")
+          : process.env.NEXT_PUBLIC_API_URL || "https://gm-fabrics-server.vercel.app/api";
+
+      const res = await fetch(`${baseUrl}/backup/export?format=${format}`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || `Failed to export tables as ${format.toUpperCase()}`);
+      }
+
+      const blob = await res.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      const today = new Date().toISOString().split("T")[0];
+      a.download =
+        format === "csv"
+          ? `GM_Fabrics_All_Tables_CSV_${today}.zip`
+          : `GM_Fabrics_All_Tables_${today}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(downloadUrl);
+      document.body.removeChild(a);
+
+      showToastSuccess(`All tables exported successfully (${format.toUpperCase()})!`);
+    } catch (err) {
+      console.error("Export error:", err);
+      showToastError(err.message || "Export download failed.");
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -129,23 +186,88 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            {/* Export All Tables Button & Dropdown */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
+                disabled={exporting}
+                className="bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 font-bold text-xs px-3.5 py-2.5 rounded-xl shadow-sm flex items-center gap-2 transition-all cursor-pointer hover:scale-105 active:scale-95 disabled:opacity-50"
+              >
+                <Download className={`w-4 h-4 text-sky-400 ${exporting ? "animate-bounce" : ""}`} />
+                <span>{exporting ? "Exporting..." : "Export Data"}</span>
+                <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+              </button>
+
+              {exportDropdownOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-20"
+                    onClick={() => setExportDropdownOpen(false)}
+                  />
+                  <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl z-30 p-1.5 space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => handleExport("xlsx")}
+                      className="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-2.5 transition-colors cursor-pointer"
+                    >
+                      <div className="p-1 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
+                        <FileSpreadsheet className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="font-bold text-zinc-900 dark:text-zinc-100">Excel (.xlsx)</div>
+                        <div className="text-[10px] text-zinc-400">All tables in separate sheets</div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleExport("csv")}
+                      className="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-2.5 transition-colors cursor-pointer"
+                    >
+                      <div className="p-1 rounded bg-sky-100 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400">
+                        <FileArchive className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="font-bold text-zinc-900 dark:text-zinc-100">CSV Archive (.zip)</div>
+                        <div className="text-[10px] text-zinc-400">Individual CSV for each table</div>
+                      </div>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Wipe / Reset Database Button (Only for ADMIN role) */}
+            {user?.role === "ADMIN" && (
+              <button
+                type="button"
+                onClick={() => setShowResetModal(true)}
+                title="Wipe and factory reset all store data"
+                className="bg-red-950/30 hover:bg-red-900/50 text-red-400 border border-red-800/60 font-bold text-xs px-3.5 py-2.5 rounded-xl shadow-sm flex items-center gap-1.5 transition-all cursor-pointer hover:scale-105 active:scale-95"
+              >
+                <Trash2 className="w-4 h-4 text-red-400" />
+                <span>Reset Database</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => fetchKpis(period)}
-              className="bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 font-bold text-xs px-4 py-2.5 rounded-xl shadow-sm flex items-center gap-2 transition-all cursor-pointer hover:scale-105 active:scale-95"
+              className="bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 font-bold text-xs px-3.5 py-2.5 rounded-xl shadow-sm flex items-center gap-2 transition-all cursor-pointer hover:scale-105 active:scale-95"
             >
               <RefreshCw className={`w-4 h-4 text-emerald-400 ${loading ? "animate-spin" : ""}`} />
-              <span>Sync Analytics</span>
+              <span>Sync</span>
             </button>
 
             <Link href="/pos">
               <button
                 type="button"
-                className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-xs px-5 py-2.5 rounded-xl shadow-lg flex items-center gap-2 transition-all cursor-pointer hover:scale-105 active:scale-95"
+                className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-xs px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 transition-all cursor-pointer hover:scale-105 active:scale-95"
               >
                 <ShoppingCart className="w-4 h-4 text-zinc-950" />
-                <span>Launch POS Counter</span>
+                <span>POS Counter</span>
               </button>
             </Link>
           </div>
@@ -491,6 +613,13 @@ export default function DashboardPage() {
       </div>
       </>
       )}
+
+      {/* Reset Database Confirmation Modal */}
+      <ResetDatabaseModal
+        isOpen={showResetModal}
+        onClose={() => setShowResetModal(false)}
+        onSuccess={() => fetchKpis(period)}
+      />
     </div>
   );
 }

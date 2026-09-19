@@ -130,6 +130,7 @@ export const createSale = async (userId, data) => {
         throw new Error("Customer name or selection is required for CREDIT (Khata) payment");
       }
       // 1. Calculate line item subtotals and check stock
+      const roundMoney = (v) => Math.round((parseFloat(v) || 0) * 100) / 100;
       let subtotal = 0;
       const preparedItems = [];
 
@@ -158,8 +159,8 @@ export const createSale = async (userId, data) => {
           );
         }
 
-        const itemSubtotal = qty * price;
-        subtotal += itemSubtotal;
+        const itemSubtotal = roundMoney(qty * price);
+        subtotal = roundMoney(subtotal + itemSubtotal);
 
         preparedItems.push({
           productId: prodId,
@@ -176,19 +177,19 @@ export const createSale = async (userId, data) => {
       let discountAmount = 0;
 
       if (discountType === "PERCENTAGE" && discVal > 0) {
-        discountAmount = (subtotal * discVal) / 100;
+        discountAmount = roundMoney((subtotal * discVal) / 100);
       } else if (discountType === "FLAT" && discVal > 0) {
-        discountAmount = Math.min(discVal, subtotal);
+        discountAmount = roundMoney(Math.min(discVal, subtotal));
       }
 
-      const totalAmount = Math.max(0, subtotal - discountAmount);
+      const totalAmount = roundMoney(Math.max(0, subtotal - discountAmount));
 
       let amtPaid = parseFloat(amountPaid || 0);
       if (payMethod === "CREDIT") {
         amtPaid = 0; // Credit sale
       }
 
-      const changeAmount = Math.max(0, amtPaid - totalAmount);
+      const changeAmount = roundMoney(Math.max(0, amtPaid - totalAmount));
 
       // 3. Generate Sale Number
       const saleNumber = await generateSaleNumber();
@@ -238,7 +239,7 @@ export const createSale = async (userId, data) => {
                 quantity: take,
                 costPrice: batchCost,
                 unitPrice: item.unitPrice,
-                subtotal: take * item.unitPrice,
+                subtotal: roundMoney(take * item.unitPrice),
               },
             });
           } else {
@@ -249,7 +250,7 @@ export const createSale = async (userId, data) => {
                 quantity: item.quantity,
                 costPrice: item.product.costPrice || 0,
                 unitPrice: item.unitPrice,
-                subtotal: item.subtotal,
+                subtotal: roundMoney(item.subtotal),
               },
             });
           }
@@ -288,7 +289,7 @@ export const createSale = async (userId, data) => {
                   quantity: takeFromThisBatch,
                   costPrice: batchCost,
                   unitPrice: batchSelling,
-                  subtotal: takeFromThisBatch * batchSelling,
+                  subtotal: roundMoney(takeFromThisBatch * batchSelling),
                 },
               });
 
@@ -304,7 +305,7 @@ export const createSale = async (userId, data) => {
                 quantity: remainingToDeduct,
                 costPrice: item.product.costPrice || 0,
                 unitPrice: item.unitPrice,
-                subtotal: remainingToDeduct * item.unitPrice,
+                subtotal: roundMoney(remainingToDeduct * item.unitPrice),
               },
             });
           }

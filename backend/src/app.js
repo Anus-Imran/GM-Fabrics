@@ -22,6 +22,7 @@ import returnRoutes from "./routes/returnRoutes.js";
 import reportRoutes from "./routes/reportRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import noteRoutes from "./routes/noteRoutes.js";
+import backupRoutes from "./routes/backupRoutes.js";
 
 const app = express();
 
@@ -84,6 +85,7 @@ app.use("/api/returns", returnRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/notes", noteRoutes);
+app.use("/api/backup", backupRoutes);
 
 // Global Error Handler
 app.use(errorHandler);

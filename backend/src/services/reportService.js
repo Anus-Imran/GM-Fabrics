@@ -89,35 +89,42 @@ export const getDashboardKpis = async (params = {}) => {
   });
   const totalKhataBalance = customerBalanceAgg._sum.outstandingBalance || 0;
 
-  // 6. Total Stock Valuation across all active multi-batch lots
-  const activeBatches = await prisma.stockBatch.findMany({
-    where: { remainingQuantity: { gt: 0 } },
+  // 6. Total Stock Valuation across all active products and multi-batch lots
+  const productsWithStock = await prisma.product.findMany({
+    where: { isActive: true, stockQuantity: { gt: 0 } },
+    include: {
+      stockBatches: {
+        where: { remainingQuantity: { gt: 0 } },
+        orderBy: { createdAt: "asc" },
+      },
+    },
   });
 
   let totalStockValue = 0;
   let totalStockItems = 0;
 
-  for (const b of activeBatches) {
-    let cost = Number(b.costPrice || b.costPerUnit || b.cost || 0);
-    if (!cost && b.productId) {
-      const prod = await prisma.product.findUnique({ where: { id: b.productId } });
-      cost = Number(prod?.costPrice || 0);
+  for (const p of productsWithStock) {
+    const pQty = Number(p.stockQuantity || 0);
+    const pCost = Number(p.costPrice || 0);
+    totalStockItems += pQty;
+
+    const batches = p.stockBatches || [];
+    if (batches.length > 0) {
+      const batchQtySum = batches.reduce((sum, b) => sum + Number(b.remainingQuantity || 0), 0);
+      const batchValSum = batches.reduce((sum, b) => {
+        const cost = Number(b.costPrice ?? b.costPerUnit ?? pCost);
+        return sum + (Number(b.remainingQuantity || 0) * cost);
+      }, 0);
+
+      if (batchQtySum > 0 && Math.abs(batchQtySum - pQty) > 0.001) {
+        totalStockValue += (batchValSum * (pQty / batchQtySum));
+      } else {
+        totalStockValue += batchValSum;
+      }
+    } else {
+      totalStockValue += pQty * pCost;
     }
-    totalStockValue += (b.remainingQuantity || 0) * cost;
-    totalStockItems += (b.remainingQuantity || 0);
   }
-
-  const productsWithStock = await prisma.product.findMany({
-    where: { isActive: true, stockQuantity: { gt: 0 } },
-    include: { stockBatches: { where: { remainingQuantity: { gt: 0 } } } },
-  });
-
-  productsWithStock.forEach((p) => {
-    if (!p.stockBatches || p.stockBatches.length === 0) {
-      totalStockValue += (p.stockQuantity || 0) * Number(p.costPrice || 0);
-      totalStockItems += (p.stockQuantity || 0);
-    }
-  });
 
   // 7. Low stock products
   const allActiveProducts = await prisma.product.findMany({
@@ -380,17 +387,23 @@ export const getInventoryReport = async () => {
 
   const productValuation = products.map((p) => {
     let costVal = 0;
-    let totalQty = 0;
+    const totalQty = p.stockQuantity || 0;
+    const pCost = p.costPrice || 0;
 
     if (p.stockBatches && p.stockBatches.length > 0) {
-      p.stockBatches.forEach((b) => {
-        const cost = b.costPrice ?? b.costPerUnit ?? 0;
-        costVal += b.remainingQuantity * cost;
-        totalQty += b.remainingQuantity;
-      });
+      const batchQtySum = p.stockBatches.reduce((acc, b) => acc + (b.remainingQuantity || 0), 0);
+      const batchValSum = p.stockBatches.reduce((acc, b) => {
+        const cost = b.costPrice ?? b.costPerUnit ?? pCost;
+        return acc + ((b.remainingQuantity || 0) * cost);
+      }, 0);
+
+      if (batchQtySum > 0 && Math.abs(batchQtySum - totalQty) > 0.001) {
+        costVal = batchValSum * (totalQty / batchQtySum);
+      } else {
+        costVal = batchValSum;
+      }
     } else {
-      totalQty = p.stockQuantity;
-      costVal = p.stockQuantity * (p.costPrice || 0);
+      costVal = totalQty * pCost;
     }
 
     const retailVal = totalQty * (p.salePrice || 0);

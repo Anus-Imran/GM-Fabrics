@@ -128,7 +128,7 @@ export const StockEntryModal = ({ isOpen, onClose, onSubmit, products = [], supp
           <Input
             label="Purchased Quantity *"
             type="number"
-            step="0.01"
+            step="any"
             value={quantity}
             onChange={(e) => setQuantity(e.target.value)}
             placeholder="10"
@@ -137,7 +137,7 @@ export const StockEntryModal = ({ isOpen, onClose, onSubmit, products = [], supp
           <Input
             label="Vendor Cost / Unit (PKR) *"
             type="number"
-            step="0.01"
+            step="any"
             value={costPerUnit}
             onChange={(e) => setCostPerUnit(e.target.value)}
             placeholder="2000"
@@ -149,7 +149,7 @@ export const StockEntryModal = ({ isOpen, onClose, onSubmit, products = [], supp
           <Input
             label="New Retail Selling Price (PKR - Optional)"
             type="number"
-            step="0.01"
+            step="any"
             value={newSalePrice}
             onChange={(e) => setNewSalePrice(e.target.value)}
             placeholder={selectedProduct?.salePrice ? selectedProduct.salePrice.toString() : "3500"}

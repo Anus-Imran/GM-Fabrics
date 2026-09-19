@@ -17,6 +17,15 @@ export const generateReceiptHtml = (sale) => {
   const isRefunded = sale.status === "REFUNDED" || totalRefunded >= sale.totalAmount;
   const isPartiallyRefunded = sale.status === "PARTIALLY_REFUNDED" || (totalRefunded > 0 && !isRefunded);
 
+  const fmt = (v) => {
+    const n = parseFloat(v) || 0;
+    const hasDecimals = n % 1 !== 0;
+    return n.toLocaleString("en-PK", {
+      minimumFractionDigits: hasDecimals ? 2 : 0,
+      maximumFractionDigits: 2,
+    });
+  };
+
   let totalItemSavings = 0;
 
   const itemsHtml = (sale.saleItems || [])
@@ -34,13 +43,13 @@ export const generateReceiptHtml = (sale) => {
         <strong>${item.product?.name || "Fabric Item"}</strong>
         ${
           hasItemDiscount
-            ? `<br><span style="font-size: 9px; color: #444; font-style: italic;">Orig: PKR ${origPrice.toLocaleString()} (Disc: -PKR ${itemDiscPerUnit.toLocaleString()}/unit)</span>`
+            ? `<br><span style="font-size: 9px; color: #444; font-style: italic;">Orig: PKR ${fmt(origPrice)} (Disc: -PKR ${fmt(itemDiscPerUnit)}/unit)</span>`
             : ""
         }
       </td>
       <td style="text-align: center; padding: 3px 0; vertical-align: top; font-weight: bold;">${item.quantity} ${item.product?.unit?.symbol || "pcs"}</td>
-      <td style="text-align: right; padding: 3px 0; vertical-align: top;">${item.unitPrice.toLocaleString()}</td>
-      <td style="text-align: right; padding: 3px 0; vertical-align: top; font-weight: bold;">${item.subtotal.toLocaleString()}</td>
+      <td style="text-align: right; padding: 3px 0; vertical-align: top;">${fmt(item.unitPrice)}</td>
+      <td style="text-align: right; padding: 3px 0; vertical-align: top; font-weight: bold;">${fmt(item.subtotal)}</td>
     </tr>
   `;
     })
@@ -121,36 +130,36 @@ export const generateReceiptHtml = (sale) => {
 
   <div class="divider"></div>
 
-  <div class="row"><span>Subtotal:</span><span>PKR ${sale.subtotal.toLocaleString()}</span></div>
+  <div class="row"><span>Subtotal:</span><span>PKR ${fmt(sale.subtotal)}</span></div>
   ${
     sale.discountAmount > 0
-      ? `<div class="row"><span>Bill Discount:</span><span>- PKR ${sale.discountAmount.toLocaleString()}</span></div>`
+      ? `<div class="row"><span>Bill Discount:</span><span>- PKR ${fmt(sale.discountAmount)}</span></div>`
       : ""
   }
   ${
     combinedTotalSavings > 0
-      ? `<div class="row savings-row"><span>YOU SAVED TOTAL:</span><span>PKR ${combinedTotalSavings.toLocaleString()}</span></div>`
+      ? `<div class="row savings-row"><span>YOU SAVED TOTAL:</span><span>PKR ${fmt(combinedTotalSavings)}</span></div>`
       : ""
   }
   
   <div class="double-divider"></div>
   
-  <div class="row ${totalRefunded > 0 ? '' : 'total-row'}"><span>Original Total:</span><span>PKR ${sale.totalAmount.toLocaleString()}</span></div>
+  <div class="row ${totalRefunded > 0 ? '' : 'total-row'}"><span>Original Total:</span><span>PKR ${fmt(sale.totalAmount)}</span></div>
   ${
     totalRefunded > 0
-      ? `<div class="row" style="color: #d97706; font-weight: bold;"><span>Total Refunded:</span><span>- PKR ${totalRefunded.toLocaleString()}</span></div>
+      ? `<div class="row" style="color: #d97706; font-weight: bold;"><span>Total Refunded:</span><span>- PKR ${fmt(totalRefunded)}</span></div>
          <div class="double-divider"></div>
-         <div class="row total-row"><span>NET TOTAL:</span><span>PKR ${netAmount.toLocaleString()}</span></div>`
+         <div class="row total-row"><span>NET TOTAL:</span><span>PKR ${fmt(netAmount)}</span></div>`
       : ""
   }
   
   <div class="divider"></div>
 
   <div class="row"><span>Payment Method:</span><span class="bold">${sale.paymentMethod}</span></div>
-  <div class="row"><span>Amount Tendered:</span><span>PKR ${(sale.amountPaid || sale.totalAmount).toLocaleString()}</span></div>
+  <div class="row"><span>Amount Tendered:</span><span>PKR ${fmt(sale.amountPaid || sale.totalAmount)}</span></div>
   ${
     sale.paymentMethod === "CASH"
-      ? `<div class="row"><span>Change Returned:</span><span>PKR ${(sale.changeAmount || 0).toLocaleString()}</span></div>`
+      ? `<div class="row"><span>Change Returned:</span><span>PKR ${fmt(sale.changeAmount || 0)}</span></div>`
       : ""
   }
 

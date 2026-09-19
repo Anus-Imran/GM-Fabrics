@@ -26,7 +26,7 @@ export const StockEntryTable = ({ entries = [], onDeleteSelected = null }) => {
       label: "Quantity",
       render: (e) => (
         <span className="font-bold text-zinc-900 dark:text-zinc-100">
-          {e.quantity} {e.product?.unit?.symbol || ""}
+          {Number(e.quantity)} {e.product?.unit?.symbol || ""}
         </span>
       ),
     },

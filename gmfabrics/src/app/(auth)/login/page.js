@@ -6,11 +6,10 @@ import { useAuth } from "../../../context/authContext.jsx";
 import { Input } from "../../../components/common/input.jsx";
 import { Button } from "../../../components/common/button.jsx";
 import { showToastSuccess, showToastError } from "../../../utils/alerts.js";
-import { Lock } from "lucide-react";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("admin@gmfabrics.com");
-  const [password, setPassword] = useState("admin123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const { login } = useAuth();
@@ -61,7 +60,7 @@ export default function LoginPage() {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="admin@gmfabrics.com"
+            placeholder="Enter your email"
             required
           />
 
@@ -78,14 +77,6 @@ export default function LoginPage() {
             {loading ? "Signing in..." : "Sign In to Dashboard"}
           </Button>
         </form>
-
-        <div className="mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800 text-center">
-          <p className="text-[11px] text-zinc-400">
-            Demo Credentials: <br />
-            <strong className="text-zinc-700 dark:text-zinc-300">Admin:</strong> admin@gmfabrics.com / admin123 <br />
-            <strong className="text-zinc-700 dark:text-zinc-300">Cashier:</strong> cashier@gmfabrics.com / cashier123
-          </p>
-        </div>
       </div>
     </div>
   );

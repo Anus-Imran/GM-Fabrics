@@ -74,35 +74,21 @@ async function main() {
   }
   console.log("Brands seeded.");
 
-  // 5. Users (Admin & Cashier)
-  const adminPassword = await bcrypt.hash("admin123", 10);
-  const cashierPassword = await bcrypt.hash("cashier123", 10);
+  // 5. Users (Admin)
+  const adminPassword = await bcrypt.hash("GMFabrics0987#", 10);
 
   await prisma.user.upsert({
-    where: { email: "admin@gmfabrics.com" },
+    where: { email: "umarhassan@gmfabrics.store" },
     update: {},
     create: {
-      name: "System Admin",
-      email: "admin@gmfabrics.com",
+      name: "Umar Hassan",
+      email: "umarhassan@gmfabrics.store",
       password: adminPassword,
       role: "ADMIN",
     },
   });
 
-  await prisma.user.upsert({
-    where: { email: "cashier@gmfabrics.com" },
-    update: {},
-    create: {
-      name: "Shop Cashier",
-      email: "cashier@gmfabrics.com",
-      password: cashierPassword,
-      role: "CASHIER",
-    },
-  });
-
-  console.log("Users seeded successfully.");
-  console.log("Admin: admin@gmfabrics.com / admin123");
-  console.log("Cashier: cashier@gmfabrics.com / cashier123");
+  console.log("Admin user seeded successfully.");
 }
 
 main()

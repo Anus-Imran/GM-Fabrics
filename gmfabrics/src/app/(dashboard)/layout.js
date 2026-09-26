@@ -2,19 +2,26 @@
 
 import React from "react";
 import { CartProvider } from "../../context/cartContext.jsx";
+import { SidebarLayout, SidebarBackdrop } from "../../components/navigation/sidebarPrimitives.jsx";
 import { SidebarNav } from "../../components/navigation/sidebarNav.jsx";
 import { TopbarHeader } from "../../components/navigation/topbarHeader.jsx";
 
 export default function DashboardLayout({ children }) {
   return (
     <CartProvider>
-      <div className="flex min-h-screen bg-slate-50/60 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100 font-sans">
+      <SidebarLayout>
+        {/* Mobile Backdrop for Offcanvas mode */}
+        <SidebarBackdrop />
+
+        {/* PrimeReact-style Collapsible Sidebar */}
         <SidebarNav />
-        <div className="flex-1 flex flex-col min-w-0">
+
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
           <TopbarHeader />
-          <main className="flex-1 p-6 overflow-y-auto">{children}</main>
+          <main className="flex-1 p-4 sm:p-6 overflow-y-auto">{children}</main>
         </div>
-      </div>
+      </SidebarLayout>
     </CartProvider>
   );
 }

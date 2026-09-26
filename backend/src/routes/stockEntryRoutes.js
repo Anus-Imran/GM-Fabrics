@@ -10,5 +10,9 @@ router.use(authenticateUser);
 router.get("/", stockEntryController.getStockEntries);
 router.get("/:id", stockEntryController.getStockEntry);
 router.post("/", requireAdmin, stockEntryController.createStockEntry);
+router.put("/:id", requireAdmin, stockEntryController.updateStockEntry);
+router.delete("/:id", requireAdmin, stockEntryController.deleteStockEntry);
+router.delete("/", requireAdmin, stockEntryController.deleteManyStockEntries);
 
 export default router;
+

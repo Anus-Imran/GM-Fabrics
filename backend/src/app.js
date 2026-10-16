@@ -27,6 +27,7 @@ import noteRoutes from "./routes/noteRoutes.js";
 import backupRoutes from "./routes/backupRoutes.js";
 import cashSessionRoutes from "./routes/cashSessionRoutes.js";
 import auditRoutes from "./routes/auditRoutes.js";
+import supplierReturnRoutes from "./routes/supplierReturnRoutes.js";
 
 const app = express();
 
@@ -104,6 +105,7 @@ app.use("/api/notes", noteRoutes);
 app.use("/api/backup", backupRoutes);
 app.use("/api/cash-sessions", cashSessionRoutes);
 app.use("/api/audit-logs", auditRoutes);
+app.use("/api/supplier-returns", supplierReturnRoutes);
 
 app.use(notFoundHandler);
 

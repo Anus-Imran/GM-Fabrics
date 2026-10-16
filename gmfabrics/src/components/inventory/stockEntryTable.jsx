@@ -1,7 +1,7 @@
 import React from "react";
 import { formatCurrency } from "../../utils/formatCurrency.js";
 import { formatDateTime } from "../../utils/formatDate.js";
-import { TrendingUp, TrendingDown, Minus, Edit2, Trash2 } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, Edit2, Trash2, PackageMinus } from "lucide-react";
 import { DataTable } from "../common/dataTable.jsx";
 
 export const StockEntryTable = ({
@@ -9,6 +9,7 @@ export const StockEntryTable = ({
   onDeleteSelected = null,
   onEdit = null,
   onDelete = null,
+  onReturn = null,
 }) => {
   const columns = [
     {
@@ -57,6 +58,9 @@ export const StockEntryTable = ({
                 Full lot ({remaining} left)
               </span>
             ) : null}
+            {e.returnedQuantity > 0 && (
+              <span className="text-[10px] text-rose-600 dark:text-rose-400 font-medium">{e.returnedQuantity} returned to supplier</span>
+            )}
           </div>
         );
       },
@@ -106,6 +110,16 @@ export const StockEntryTable = ({
 
         return (
           <div className="flex items-center justify-end gap-1.5">
+            {onReturn && e.supplierId && (e.remainingQuantity || 0) > 0 && (
+              <button
+                type="button"
+                onClick={() => onReturn(e)}
+                title="Return to supplier / replacement"
+                className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
+              >
+                <PackageMinus className="w-4 h-4" />
+              </button>
+            )}
             {onEdit && (
               <button
                 type="button"

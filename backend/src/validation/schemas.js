@@ -242,6 +242,35 @@ export const bulkStockEntryBody = z.object({
     .max(200, "Too many lines in one invoice"),
 });
 
+const settlementFields = {
+  // RETURN only: ADJUST = reduce what we owe the supplier, REFUND = supplier pays money back.
+  settlement: z.enum(["ADJUST", "REFUND"]).default("ADJUST"),
+  refundAmount: z.preprocess(emptyToUndefined, money("Refund amount").optional()),
+  refundMethod: z.enum(["CASH", "BANK", "CHEQUE", "OTHER"]).default("CASH"),
+  refundToDrawer: bool.default(false),
+};
+
+export const supplierReturnBody = z.object({
+  supplierId: id,
+  productId: id,
+  batchId: optionalId.optional(),
+  type: z.enum(["RETURN", "REPLACEMENT"]),
+  quantity: quantity("Return quantity"),
+  reason: optionalText(300, "Reason"),
+  notes: optionalText(500, "Notes"),
+  returnedAt: optionalDate,
+  ...settlementFields,
+});
+
+export const receiveReplacementBody = z.object({
+  quantity: z.preprocess(emptyToUndefined, quantity("Received quantity").optional()),
+});
+
+export const convertReturnBody = z.object({
+  notes: optionalText(500, "Notes"),
+  ...settlementFields,
+});
+
 export const deleteManyBody = z.object({
   ids: z.array(id).min(1, "Select at least one record").max(500),
 });

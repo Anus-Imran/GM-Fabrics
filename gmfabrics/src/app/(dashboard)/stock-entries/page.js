@@ -5,6 +5,7 @@ import { PageHeader } from "../../../components/common/pageHeader.jsx";
 import { StockEntryTable } from "../../../components/inventory/stockEntryTable.jsx";
 import { StockEntryModal } from "../../../components/inventory/stockEntryModal.jsx";
 import { PurchaseInvoiceModal } from "../../../components/inventory/purchaseInvoiceModal.jsx";
+import { SupplierReturnModal } from "../../../components/inventory/supplierReturnModal.jsx";
 import { Card } from "../../../components/common/card.jsx";
 import { Button } from "../../../components/common/button.jsx";
 import { Plus, FileText } from "lucide-react";
@@ -21,6 +22,7 @@ export default function StockEntriesPage() {
   const [showModal, setShowModal] = useState(false);
   const [showInvoice, setShowInvoice] = useState(false);
   const [editingEntry, setEditingEntry] = useState(null);
+  const [returnPreset, setReturnPreset] = useState(null);
 
   const loadLookups = useCallback(() => {
     api.get("/products", { params: { view: "pos" } }).then((r) => setProducts(r.data || [])).catch(() => {});
@@ -137,6 +139,7 @@ export default function StockEntriesPage() {
           }}
           onDelete={handleDelete}
           onDeleteSelected={handleDeleteSelected}
+          onReturn={(e) => setReturnPreset({ supplierId: e.supplierId, productId: e.productId, batchId: e.stockBatches?.[0]?.id })}
         />
       </Card>
 
@@ -151,6 +154,17 @@ export default function StockEntriesPage() {
         products={products}
         suppliers={suppliers}
         initialData={editingEntry}
+      />
+
+      <SupplierReturnModal
+        isOpen={!!returnPreset}
+        onClose={() => setReturnPreset(null)}
+        preset={returnPreset}
+        suppliers={suppliers}
+        onDone={() => {
+          showToastSuccess("Stock returned to supplier");
+          afterChange();
+        }}
       />
 
       <PurchaseInvoiceModal

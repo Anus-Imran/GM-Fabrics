@@ -10,7 +10,9 @@ const TX_OPTIONS = { maxWait: 10000, timeout: 30000 };
 const entryInclude = {
   product: { include: { unit: true, category: true, brand: true } },
   supplier: true,
-  stockBatches: { select: { id: true, initialQuantity: true, remainingQuantity: true, sellingPrice: true, costPrice: true } },
+  stockBatches: {
+    select: { id: true, initialQuantity: true, remainingQuantity: true, returnedQuantity: true, sellingPrice: true, costPrice: true },
+  },
 };
 
 // How much of an entry's lot has left the shelf (sold, adjusted, etc.).
@@ -19,7 +21,8 @@ const consumedOf = (entry) =>
 
 const decorate = (entry) => ({
   ...entry,
-  soldQuantity: consumedOf(entry),
+  soldQuantity: round3(consumedOf(entry) - (entry.stockBatches || []).reduce((s, b) => s + (b.returnedQuantity || 0), 0)),
+  returnedQuantity: round3((entry.stockBatches || []).reduce((s, b) => s + (b.returnedQuantity || 0), 0)),
   remainingQuantity: round3((entry.stockBatches || []).reduce((s, b) => s + b.remainingQuantity, 0)),
 });
 
@@ -217,7 +220,7 @@ export const updateStockEntry = async (user, id, data) => {
   await prisma.$transaction(async (tx) => {
     const existing = await tx.stockEntry.findUnique({
       where: { id },
-      include: { product: true, stockBatches: { include: { _count: { select: { saleItems: true } } } } },
+      include: { product: true, stockBatches: { include: { _count: { select: { saleItems: true, supplierReturns: true } } } } },
     });
     if (!existing) throw notFound("Stock purchase entry not found");
 
@@ -231,13 +234,13 @@ export const updateStockEntry = async (user, id, data) => {
 
     const mainBatch = existing.stockBatches[0] || null;
     const consumed = mainBatch ? round3(Math.max(0, mainBatch.initialQuantity - mainBatch.remainingQuantity)) : 0;
-    const hasSales = mainBatch ? mainBatch._count.saleItems > 0 : false;
+    const hasSales = mainBatch ? mainBatch._count.saleItems > 0 || mainBatch._count.supplierReturns > 0 : false;
 
     if (isProductChanged && (consumed > QTY_EPSILON || hasSales)) {
-      throw badRequest(`Cannot change the product: ${consumed} units from this purchase lot have already been sold or adjusted.`);
+      throw badRequest(`Cannot change the product: ${consumed} units from this purchase lot have already been sold, adjusted or returned.`);
     }
     if (newQty + QTY_EPSILON < consumed) {
-      throw badRequest(`Cannot reduce purchase quantity to ${newQty}: ${consumed} units from this lot are already sold. Minimum is ${consumed}.`);
+      throw badRequest(`Cannot reduce purchase quantity to ${newQty}: ${consumed} units from this lot are already sold or returned. Minimum is ${consumed}.`);
     }
 
     const targetProduct = isProductChanged
@@ -330,16 +333,19 @@ export const updateStockEntry = async (user, id, data) => {
 const deleteEntryInTx = async (tx, user, id) => {
   const entry = await tx.stockEntry.findUnique({
     where: { id },
-    include: { product: true, stockBatches: { include: { _count: { select: { saleItems: true, adjustments: true } } } } },
+    include: {
+      product: true,
+      stockBatches: { include: { _count: { select: { saleItems: true, adjustments: true, supplierReturns: true } } } },
+    },
   });
   if (!entry) throw notFound(`Stock purchase entry #${id} not found`);
   await lockProducts(tx, [entry.productId]);
 
   const consumed = consumedOf(entry);
-  const linked = entry.stockBatches.some((b) => b._count.saleItems > 0 || b._count.adjustments > 0);
+  const linked = entry.stockBatches.some((b) => b._count.saleItems > 0 || b._count.adjustments > 0 || b._count.supplierReturns > 0);
   if (consumed > QTY_EPSILON || linked) {
     throw badRequest(
-      `Cannot delete purchase #${id} (${entry.product.name}): ${consumed > 0 ? consumed : "some"} units from this lot were already sold or adjusted.`
+      `Cannot delete purchase #${id} (${entry.product.name}): ${consumed > 0 ? consumed : "some"} units from this lot were already sold, adjusted or returned to the supplier.`
     );
   }
 

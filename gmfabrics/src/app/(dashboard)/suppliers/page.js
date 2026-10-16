@@ -8,7 +8,8 @@ import { Modal } from "../../../components/common/modal.jsx";
 import { Input } from "../../../components/common/input.jsx";
 import { Badge } from "../../../components/common/badge.jsx";
 import { Tooltip } from "../../../components/common/tooltip.jsx";
-import { Plus, Edit2, Trash2, Truck, BookOpen, Banknote } from "lucide-react";
+import { Plus, Edit2, Trash2, Truck, BookOpen, Banknote, PackageMinus } from "lucide-react";
+import { SupplierReturnModal } from "../../../components/inventory/supplierReturnModal.jsx";
 import { showToastSuccess, showToastError, confirmDelete } from "../../../utils/alerts.js";
 import { formatCurrency } from "../../../utils/formatCurrency.js";
 import { formatDateTime } from "../../../utils/formatDate.js";
@@ -35,6 +36,7 @@ export default function SuppliersPage() {
   const [payFor, setPayFor] = useState(null);
   const [payment, setPayment] = useState({ amount: "", method: "CASH", reference: "", fromDrawer: false, notes: "" });
   const [payError, setPayError] = useState("");
+  const [returnPreset, setReturnPreset] = useState(null);
 
   const fetchSuppliers = useCallback(async () => {
     setLoading(true);
@@ -197,6 +199,11 @@ export default function SuppliersPage() {
               { key: "totalPurchased", label: "Purchased", render: (s) => formatCurrency(s.totalPurchased) },
               { key: "totalPaid", label: "Paid", render: (s) => formatCurrency(s.totalPaid) },
               {
+                key: "totalReturned",
+                label: "Returned",
+                render: (s) => (s.totalReturned > 0 || s.totalRefunded > 0 ? formatCurrency(s.totalReturned - s.totalRefunded) : "—"),
+              },
+              {
                 key: "balanceDue",
                 label: "Balance Due",
                 render: (s) =>
@@ -218,6 +225,11 @@ export default function SuppliersPage() {
                     <Tooltip label="Record payment">
                       <button onClick={() => openPayment(s)} className="p-1.5 rounded text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 cursor-pointer" aria-label="Record payment">
                         <Banknote className="w-4 h-4" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip label="Return stock to supplier">
+                      <button onClick={() => setReturnPreset({ supplierId: s.id })} className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer" aria-label="Return stock">
+                        <PackageMinus className="w-4 h-4" />
                       </button>
                     </Tooltip>
                     <Tooltip label="Statement">
@@ -248,6 +260,17 @@ export default function SuppliersPage() {
           />
         )}
       </Card>
+
+      <SupplierReturnModal
+        isOpen={!!returnPreset}
+        onClose={() => setReturnPreset(null)}
+        preset={returnPreset}
+        suppliers={suppliers}
+        onDone={() => {
+          showToastSuccess("Stock returned to supplier");
+          fetchSuppliers();
+        }}
+      />
 
       {/* Add / edit supplier */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editingSupplier ? "Edit Supplier" : "Add New Supplier"} icon={Truck}>
@@ -332,7 +355,7 @@ export default function SuppliersPage() {
           <Loader text="Loading statement..." />
         ) : (
           <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-3 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
               <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/40">
                 <p className="text-zinc-500">Purchased</p>
                 <p className="font-black text-base">{formatCurrency(ledger.totalPurchased)}</p>
@@ -340,6 +363,10 @@ export default function SuppliersPage() {
               <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/40">
                 <p className="text-zinc-500">Paid</p>
                 <p className="font-black text-base text-emerald-600">{formatCurrency(ledger.totalPaid)}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/40">
+                <p className="text-zinc-500">Returned (net)</p>
+                <p className="font-black text-base text-rose-600">{formatCurrency((ledger.totalReturned || 0) - (ledger.totalRefunded || 0))}</p>
               </div>
               <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30">
                 <p className="text-zinc-500">Balance due</p>
@@ -352,8 +379,8 @@ export default function SuppliersPage() {
                   <tr>
                     <th className="p-2 text-left">Date</th>
                     <th className="p-2 text-left">Details</th>
-                    <th className="p-2 text-right">Purchase</th>
-                    <th className="p-2 text-right">Payment</th>
+                    <th className="p-2 text-right">Purchase / refund</th>
+                    <th className="p-2 text-right">Payment / return</th>
                     <th className="p-2 text-right">Balance</th>
                     <th className="p-2" />
                   </tr>

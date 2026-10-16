@@ -21,6 +21,7 @@ export const getAllTablesData = async () => {
     categories,
     brands,
     units,
+    supplierReturns,
   ] = await Promise.all([
     prisma.product.findMany({
       include: { category: true, brand: true, unit: true, supplier: true },
@@ -51,6 +52,10 @@ export const getAllTablesData = async () => {
     prisma.category.findMany({ orderBy: { id: "asc" } }),
     prisma.brand.findMany({ orderBy: { id: "asc" } }),
     prisma.unit.findMany({ orderBy: { id: "asc" } }),
+    prisma.supplierReturn.findMany({
+      include: { supplier: { select: { name: true } }, product: { select: { name: true } } },
+      orderBy: { returnedAt: "desc" },
+    }),
   ]);
 
   // Format Tables Data into clean rows with readable headers
@@ -170,6 +175,22 @@ export const getAllTablesData = async () => {
       Notes: b.notes || "",
     })),
 
+    Supplier_Returns: supplierReturns.map((r) => ({
+      ID: r.id,
+      Date: r.returnedAt ? new Date(r.returnedAt).toLocaleString("en-PK") : "",
+      Supplier: r.supplier?.name || "",
+      Product: r.product?.name || "",
+      Type: r.type,
+      Status: r.status,
+      Quantity: r.quantity,
+      "Replaced Qty": r.replacedQuantity,
+      "Cost / Unit (PKR)": r.costPerUnit,
+      "Credit Note (PKR)": r.creditAmount,
+      "Refund Received (PKR)": r.refundReceived,
+      "Lot ID": r.batchId ? `#${r.batchId}` : "",
+      Reason: r.reason || "",
+    })),
+
     Units: units.map((u) => ({
       ID: u.id,
       "Unit Name": u.name,
@@ -249,6 +270,7 @@ export const resetDatabase = async (user, password) => {
       await tx.sale.deleteMany({});
 
       // 2. Stock lots, adjustments, purchases and supplier payments
+      await tx.supplierReturn.deleteMany({});
       await tx.stockAdjustment.deleteMany({});
       await tx.stockBatch.deleteMany({});
       await tx.stockEntry.deleteMany({});

@@ -47,6 +47,19 @@ enum CashSessionStatus {
   CLOSED
 }
 
+enum SupplierReturnType {
+  RETURN // goods go back for good — supplier balance is reduced
+  REPLACEMENT // goods go back, supplier will send replacements
+}
+
+enum SupplierReturnStatus {
+  COMPLETED // plain return, settled
+  PENDING_REPLACEMENT
+  PARTIALLY_REPLACED
+  REPLACED
+  CONVERTED // replacement that was turned into a return for the unreplaced quantity
+}
+
 // 1. Users & Auth
 model User {
   id               Int               @id @default(autoincrement())
@@ -63,6 +76,7 @@ model User {
   khataEntries     KhataEntry[]
   stockAdjustments StockAdjustment[]
   supplierPayments SupplierPayment[]
+  supplierReturns  SupplierReturn[]
   openedSessions   CashSession[]     @relation("SessionOpenedBy")
   closedSessions   CashSession[]     @relation("SessionClosedBy")
   auditLogs        AuditLog[]
@@ -111,6 +125,7 @@ model Supplier {
   products     Product[]
   stockEntries StockEntry[]
   payments     SupplierPayment[]
+  returns      SupplierReturn[]
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 }
@@ -146,6 +161,7 @@ model Product {
   saleItems        SaleItem[]
   returnItems      ReturnItem[]
   stockAdjustments StockAdjustment[]
+  supplierReturns  SupplierReturn[]
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
 
@@ -175,6 +191,7 @@ model StockEntry {
   purchasedAt         DateTime     @default(now())
   createdAt           DateTime     @default(now())
   stockBatches        StockBatch[]
+  supplierReturns     SupplierReturn[]
 
   @@index([productId])
   @@index([supplierId])
@@ -194,9 +211,11 @@ model StockBatch {
   remainingQuantity Float
   costPrice         Float
   sellingPrice      Float             @default(0)
+  returnedQuantity  Float             @default(0) // sent back to the supplier and not replaced
 
   saleItems         SaleItem[]
   adjustments       StockAdjustment[]
+  supplierReturns   SupplierReturn[]
 
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
@@ -417,6 +436,43 @@ model SupplierPayment {
   createdAt  DateTime @default(now())
 
   @@index([supplierId, paidAt])
+}
+
+// 16.1 Supplier Returns (purchase returns & replacements) — stock leaves a specific purchase lot
+model SupplierReturn {
+  id               Int                  @id @default(autoincrement())
+  supplierId       Int
+  supplier         Supplier             @relation(fields: [supplierId], references: [id])
+  productId        Int
+  product          Product              @relation(fields: [productId], references: [id])
+  stockEntryId     Int?
+  stockEntry       StockEntry?          @relation(fields: [stockEntryId], references: [id], onDelete: SetNull)
+  batchId          Int?
+  batch            StockBatch?          @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  type             SupplierReturnType
+  status           SupplierReturnStatus
+  quantity         Float
+  replacedQuantity Float                @default(0)
+  costPerUnit      Float
+  creditAmount     Float                @default(0) // reduces what we owe the supplier
+  refundReceived   Float                @default(0) // cash/bank the supplier paid back
+  refundMethod     String?
+  refundToDrawer   Boolean              @default(false)
+  refundedAt       DateTime?
+
+  reason           String?
+  notes            String?
+  userId           Int?
+  user             User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  returnedAt       DateTime             @default(now())
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  @@index([supplierId, returnedAt])
+  @@index([status])
+  @@index([batchId])
+  @@index([refundedAt])
 }
 
 // 17. Cash Drawer Sessions (day open / day close / Z-report)

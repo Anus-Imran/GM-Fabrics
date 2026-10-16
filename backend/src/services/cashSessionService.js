@@ -10,7 +10,7 @@ import { audit } from "../utils/audit.js";
 export const computeSessionSummary = async (openedAt, closedAt, openingCash) => {
   const window = { gte: openedAt, lte: closedAt };
 
-  const [sales, khataPayments, refunds, expenses, supplierPayments, byCashier] = await Promise.all([
+  const [sales, khataPayments, refunds, expenses, supplierPayments, byCashier, supplierRefunds] = await Promise.all([
     prisma.sale.groupBy({
       by: ["paymentMethod"],
       where: { createdAt: window, status: { not: "VOIDED" } },
@@ -37,6 +37,7 @@ export const computeSessionSummary = async (openedAt, closedAt, openingCash) => 
       _sum: { totalAmount: true },
       _count: { id: true },
     }),
+    prisma.supplierReturn.aggregate({ where: { refundedAt: window, refundToDrawer: true }, _sum: { refundReceived: true } }),
   ]);
 
   const sale = (m) => sales.find((s) => s.paymentMethod === m);
@@ -56,7 +57,8 @@ export const computeSessionSummary = async (openedAt, closedAt, openingCash) => 
   const drawerExpenses = round2(expenses._sum.amount || 0);
   const drawerSupplierPayments = round2(supplierPayments._sum.amount || 0);
 
-  const cashIn = round2(cashSales + khataAdvanceCash + khataCash);
+  const supplierRefundsCash = round2(supplierRefunds._sum.refundReceived || 0);
+  const cashIn = round2(cashSales + khataAdvanceCash + khataCash + supplierRefundsCash);
   const cashOut = round2(cashRefunds + drawerExpenses + drawerSupplierPayments);
   const expectedCash = round2((openingCash || 0) + cashIn - cashOut);
 
@@ -96,6 +98,7 @@ export const computeSessionSummary = async (openedAt, closedAt, openingCash) => 
     khataRefunds,
     drawerExpenses,
     drawerSupplierPayments,
+    supplierRefundsCash,
     cashIn,
     cashOut,
     expectedCash,

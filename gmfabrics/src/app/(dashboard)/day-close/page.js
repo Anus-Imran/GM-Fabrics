@@ -39,6 +39,7 @@ const SessionReport = ({ summary }) => (
       <Row label="Cash sales" value={summary.cashSales} />
       <Row label="Khata advance received" value={summary.khataAdvanceCash} />
       <Row label="Khata payments (cash)" value={summary.khataCashReceived} />
+      <Row label="Supplier refunds (cash)" value={summary.supplierRefundsCash} />
       <Row label="Cash refunds" value={summary.cashRefunds} negative />
       <Row label="Expenses paid from drawer" value={summary.drawerExpenses} negative />
       <Row label="Supplier payments from drawer" value={summary.drawerSupplierPayments} negative />
@@ -94,7 +95,7 @@ const printZReport = (session) => {
     ${line("Opened", "")}<div>${new Date(session.openedAt).toLocaleString("en-PK")}</div>
     <div>Closed: ${session.closedAt ? new Date(session.closedAt).toLocaleString("en-PK") : "OPEN"}</div><hr>
     ${line("Opening float", s.openingCash)}${line("Cash sales", s.cashSales)}${line("Khata advance", s.khataAdvanceCash)}
-    ${line("Khata payments", s.khataCashReceived)}${line("Cash refunds", -s.cashRefunds)}${line("Drawer expenses", -s.drawerExpenses)}
+    ${line("Khata payments", s.khataCashReceived)}${line("Supplier refunds", s.supplierRefundsCash)}${line("Cash refunds", -s.cashRefunds)}${line("Drawer expenses", -s.drawerExpenses)}
     ${line("Supplier payments", -s.drawerSupplierPayments)}<hr>${line("EXPECTED CASH", s.expectedCash)}
     ${session.countedCash !== null && session.countedCash !== undefined ? line("COUNTED CASH", session.countedCash) + line("DIFFERENCE", session.difference) : ""}<hr>
     ${line("Bills", s.billsCount)}${line("Gross sales", s.grossSales)}${line("Card sales", s.cardSales)}${line("Khata sales", s.creditSalesTotal)}

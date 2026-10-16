@@ -18,6 +18,7 @@ import {
   UserCog,
   ShieldCheck,
   KeyRound,
+  PackageMinus,
 } from "lucide-react";
 
 /**
@@ -39,6 +40,7 @@ export const NAV_GROUPS = [
     items: [
       { label: "Products Catalog", href: "/products", icon: Package, shortcut: "Alt+Shift+P" },
       { label: "Stock Purchases", href: "/stock-entries", icon: PackagePlus, adminOnly: true, shortcut: "Alt+Shift+I" },
+      { label: "Supplier Returns", href: "/supplier-returns", icon: PackageMinus, adminOnly: true, shortcut: "Alt+Shift+U" },
       { label: "Stock Adjustments", href: "/stock-adjustments", icon: ClipboardList, adminOnly: true, shortcut: "Alt+Shift+A" },
       { label: "Categories", href: "/categories", icon: Layers },
       { label: "Brands & Labels", href: "/brands", icon: Tag },

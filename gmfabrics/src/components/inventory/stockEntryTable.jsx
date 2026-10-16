@@ -5,7 +5,7 @@ import { TrendingUp, TrendingDown, Minus, Edit2, Trash2 } from "lucide-react";
 import { DataTable } from "../common/dataTable.jsx";
 
 export const StockEntryTable = ({
-  entries = [],
+  list,
   onDeleteSelected = null,
   onEdit = null,
   onDelete = null,
@@ -14,26 +14,34 @@ export const StockEntryTable = ({
     {
       key: "purchasedAt",
       label: "Date",
+      sortable: false,
       render: (e) => formatDateTime(e.purchasedAt),
     },
     {
       key: "productName",
       label: "Fabric Product",
-      render: (e) => <span className="font-semibold text-zinc-900 dark:text-zinc-100">{e.productName}</span>,
+      sortable: false,
+      render: (e) => (
+        <div>
+          <span className="font-semibold text-zinc-900 dark:text-zinc-100">{e.productName}</span>
+          {e.invoiceNumber && <p className="text-[10px] font-mono text-zinc-400">Inv {e.invoiceNumber}</p>}
+        </div>
+      ),
     },
     {
       key: "supplierName",
       label: "Supplier",
+      sortable: false,
       render: (e) => e.supplierName,
     },
     {
       key: "quantity",
       label: "Quantity / Lot",
+      sortable: false,
       render: (e) => {
         const mainBatch = e.stockBatches?.[0];
-        const initial = mainBatch ? mainBatch.initialQuantity : Number(e.quantity);
-        const remaining = mainBatch ? mainBatch.remainingQuantity : null;
-        const sold = mainBatch ? Math.max(0, initial - remaining) : 0;
+        const remaining = e.remainingQuantity ?? mainBatch?.remainingQuantity ?? null;
+        const sold = e.soldQuantity ?? 0;
 
         return (
           <div className="flex flex-col">
@@ -56,11 +64,13 @@ export const StockEntryTable = ({
     {
       key: "costPerUnit",
       label: "Cost / Unit",
+      sortable: false,
       render: (e) => <span className="font-mono">{formatCurrency(e.costPerUnit)}</span>,
     },
     {
       key: "priceDiff",
       label: "Price Diff",
+      sortable: false,
       render: (e) => {
         const diff = e.priceDiff || 0;
         return diff > 0 ? (
@@ -81,6 +91,7 @@ export const StockEntryTable = ({
     {
       key: "totalCost",
       label: "Total Cost",
+      sortable: false,
       cellClassName: "text-right",
       render: (e) => <span className="font-bold text-zinc-900 dark:text-zinc-100">{formatCurrency(e.totalCost)}</span>,
     },
@@ -90,11 +101,8 @@ export const StockEntryTable = ({
       sortable: false,
       cellClassName: "text-right",
       render: (e) => {
-        const mainBatch = e.stockBatches?.[0];
-        const soldQty = mainBatch
-          ? Math.max(0, (mainBatch.initialQuantity || 0) - (mainBatch.remainingQuantity || 0))
-          : 0;
-        const hasSales = soldQty > 0 || (mainBatch?.saleItems && mainBatch.saleItems.length > 0);
+        const soldQty = e.soldQuantity || 0;
+        const hasSales = soldQty > 0;
 
         return (
           <div className="flex items-center justify-end gap-1.5">
@@ -133,7 +141,7 @@ export const StockEntryTable = ({
     },
   ];
 
-  const formattedData = entries.map((e) => ({
+  const formattedData = (list?.items || []).map((e) => ({
     ...e,
     productName: e.product?.name || "Product",
     supplierName: e.supplier?.name || "—",
@@ -144,7 +152,11 @@ export const StockEntryTable = ({
       title="Stock_Purchases"
       columns={columns}
       data={formattedData}
-      searchKeys={["productName", "supplierName", "notes"]}
+      serverMode
+      totalCount={list?.total || 0}
+      onQueryChange={list?.setQuery}
+      loading={list?.loading}
+      defaultPageSize={25}
       dateKey="purchasedAt"
       onDeleteSelected={onDeleteSelected}
       enableSelection={!!onDeleteSelected}

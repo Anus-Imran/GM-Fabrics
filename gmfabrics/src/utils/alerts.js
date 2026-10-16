@@ -117,3 +117,26 @@ export const showErrorAlert = (title, text) => {
     },
   });
 };
+
+// SweetAlert2 text prompt (e.g. reason for voiding a bill). Resolves to the text or null.
+export const promptText = async (title, { label = "", placeholder = "", confirmButtonText = "Confirm", required = true } = {}) => {
+  const result = await Swal.fire({
+    title,
+    input: "text",
+    inputLabel: label,
+    inputPlaceholder: placeholder,
+    showCancelButton: true,
+    confirmButtonColor: "#ef4444",
+    cancelButtonColor: "#3f3f46",
+    confirmButtonText,
+    background: "#18181b",
+    color: "#f4f4f5",
+    inputValidator: (value) => (required && !String(value || "").trim() ? "This field is required" : undefined),
+    customClass: {
+      popup: "rounded-2xl border border-zinc-800 shadow-2xl",
+      confirmButton: "px-4 py-2 rounded-xl font-bold text-xs",
+      cancelButton: "px-4 py-2 rounded-xl font-semibold text-xs",
+    },
+  });
+  return result.isConfirmed ? String(result.value || "").trim() : null;
+};

@@ -1,4 +1,5 @@
 import { prisma } from "../config/prisma.js";
+import { badRequest, notFound } from "../utils/appError.js";
 
 export const getAllUnits = async () => {
   return prisma.unit.findMany({
@@ -13,7 +14,7 @@ export const getAllUnits = async () => {
 
 export const createUnit = async ({ name, symbol, allowDecimal }) => {
   const existing = await prisma.unit.findUnique({ where: { name } });
-  if (existing) throw new Error("Unit with this name already exists");
+  if (existing) throw badRequest("Unit with this name already exists");
   return prisma.unit.create({
     data: {
       name,
@@ -39,7 +40,7 @@ export const deleteUnit = async (id) => {
   const unitId = parseInt(id, 10);
   const productsCount = await prisma.product.count({ where: { unitId } });
   if (productsCount > 0) {
-    throw new Error("Cannot delete unit attached to existing products");
+    throw badRequest("Cannot delete unit attached to existing products");
   }
   return prisma.unit.delete({ where: { id: unitId } });
 };

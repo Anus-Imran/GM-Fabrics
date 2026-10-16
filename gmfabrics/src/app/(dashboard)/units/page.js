@@ -9,9 +9,11 @@ import { Input } from "../../../components/common/input.jsx";
 import { Plus, Ruler, Trash2 } from "lucide-react";
 import { showToastSuccess, showToastError, confirmDelete } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
+import { useAuth } from "../../../context/authContext.jsx";
 import { Loader } from "../../../components/common/loader.jsx";
 
 export default function UnitsPage() {
+  const { isAdmin } = useAuth();
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -73,9 +75,11 @@ export default function UnitsPage() {
         title="Measurement Units"
         description="Manage unit options (guzz, metre, kg, grams allow decimals e.g. 2.5 vs pieces, suits whole numbers only)."
         action={
+          isAdmin && (
           <Button onClick={() => setShowModal(true)} className="flex items-center gap-2 font-bold">
             <Plus className="w-4 h-4" /> Add Custom Unit
           </Button>
+          )
         }
       />
 
@@ -116,12 +120,14 @@ export default function UnitsPage() {
                     {u._count?.products || 0} products
                   </td>
                   <td className="py-3 px-3 text-right">
+                    {isAdmin && (
                     <button
                       onClick={() => handleDelete(u.id)}
                       className="p-1.5 rounded text-red-500 hover:text-red-700 hover:bg-red-50 cursor-pointer"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
+                    )}
                   </td>
                 </tr>
               ))}

@@ -1,15 +1,12 @@
-import express from "express";
-import * as brandController from "../controllers/brandController.js";
-import { authenticateUser } from "../middleware/authMiddleware.js";
-import { requireAdmin } from "../middleware/adminMiddleware.js";
+import * as brandService from "../services/brandService.js";
+import { buildMasterDataRouter } from "./masterDataRouter.js";
+import { brandBody } from "../validation/schemas.js";
 
-const router = express.Router();
-
-router.use(authenticateUser);
-
-router.get("/", brandController.getBrands);
-router.post("/", requireAdmin, brandController.createBrand);
-router.put("/:id", requireAdmin, brandController.updateBrand);
-router.delete("/:id", requireAdmin, brandController.deleteBrand);
-
-export default router;
+export default buildMasterDataRouter({
+  label: "Brands",
+  bodySchema: brandBody,
+  list: () => brandService.getAllBrands(),
+  create: (body) => brandService.createBrand(body),
+  update: (id, body) => brandService.updateBrand(id, body),
+  remove: (id) => brandService.deleteBrand(id),
+});

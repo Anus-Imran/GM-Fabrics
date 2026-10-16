@@ -1,182 +1,224 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { PageHeader } from "../../../components/common/pageHeader.jsx";
 import { ProductTable } from "../../../components/products/productTable.jsx";
 import { ProductFormModal } from "../../../components/products/productFormModal.jsx";
+import { StockAdjustModal } from "../../../components/products/stockAdjustModal.jsx";
+import { BarcodeLabelModal } from "../../../components/products/barcodeLabelModal.jsx";
 import { Card } from "../../../components/common/card.jsx";
 import { Button } from "../../../components/common/button.jsx";
 import { Modal } from "../../../components/common/modal.jsx";
-import { Plus, Search, Package } from "lucide-react";
+import { Plus, Package, AlertTriangle, RefreshCw } from "lucide-react";
 import { formatCurrency } from "../../../utils/formatCurrency.js";
 import { formatDateTime } from "../../../utils/formatDate.js";
 import { showToastSuccess, showToastError, confirmDelete } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
 import { Loader } from "../../../components/common/loader.jsx";
+import { useAuth } from "../../../context/authContext.jsx";
+import { useHotkeys } from "../../../hooks/useHotkeys.js";
 
 export default function ProductsPage() {
+  const { isAdmin } = useAuth();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [brands, setBrands] = useState([]);
   const [units, setUnits] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [lowOnly, setLowOnly] = useState(false);
 
-  // Form Modal
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [adjustProduct, setAdjustProduct] = useState(null);
+  const [labelProduct, setLabelProduct] = useState(null);
 
-  // Price History Modal
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [priceHistory, setPriceHistory] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
 
-  useEffect(() => {
-    fetchData();
+  const fetchProducts = useCallback(async () => {
+    setLoadError("");
+    try {
+      const res = await api.get("/products");
+      setProducts(res.data || []);
+    } catch (err) {
+      setLoadError(err.message);
+    }
   }, []);
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const [prodRes, catRes, brandRes, unitRes] = await Promise.all([
-        api.get("/products"),
-        api.get("/categories"),
-        api.get("/brands"),
-        api.get("/units"),
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      await Promise.all([
+        fetchProducts(),
+        api.get("/categories").then((r) => setCategories(r.data || [])).catch(() => {}),
+        api.get("/brands").then((r) => setBrands(r.data || [])).catch(() => {}),
+        api.get("/units").then((r) => setUnits(r.data || [])).catch(() => {}),
+        api.get("/suppliers").then((r) => setSuppliers(r.data || [])).catch(() => {}),
       ]);
-      setProducts(Array.isArray(prodRes?.data) ? prodRes.data : Array.isArray(prodRes) ? prodRes : []);
-      setCategories(Array.isArray(catRes?.data) ? catRes.data : Array.isArray(catRes) ? catRes : []);
-      setBrands(Array.isArray(brandRes?.data) ? brandRes.data : Array.isArray(brandRes) ? brandRes : []);
-      setUnits(Array.isArray(unitRes?.data) ? unitRes.data : Array.isArray(unitRes) ? unitRes : []);
-    } catch (err) {
-      console.error("Products error:", err);
-    } finally {
       setLoading(false);
-    }
-  };
+    })();
+  }, [fetchProducts]);
 
+  useHotkeys(
+    {
+      "Alt+Shift+N": () => {
+        if (!isAdmin) return;
+        setEditingProduct(null);
+        setShowModal(true);
+      },
+    },
+    { enabled: !showModal }
+  );
+
+  // Errors are re-thrown so the form shows them and stays open.
   const handleCreateOrUpdate = async (formData) => {
-    try {
-      if (editingProduct) {
-        await api.put(`/products/${editingProduct.id}`, formData);
-        showToastSuccess("Product updated successfully!");
-      } else {
-        await api.post("/products", formData);
-        showToastSuccess("New product added to catalog!");
-      }
-      fetchData();
-    } catch (err) {
-      showToastError(err.message || "Failed to save product.");
+    if (editingProduct) {
+      await api.put(`/products/${editingProduct.id}`, formData);
+      showToastSuccess("Product updated successfully!");
+    } else {
+      await api.post("/products", formData);
+      showToastSuccess("New product added to catalog!");
     }
+    fetchProducts();
   };
 
-  const handleDelete = async (id) => {
-    const isConfirmed = await confirmDelete("Deactivate Product?", "Are you sure you want to deactivate this fabric product?");
-    if (isConfirmed) {
-      try {
-        await api.delete(`/products/${id}`);
-        showToastSuccess("Product deactivated successfully.");
-        fetchData();
-      } catch (err) {
-        showToastError(err.message || "Failed to delete product.");
-      }
+  const handleDelete = async (product) => {
+    const ok = await confirmDelete(
+      `Deactivate "${product.name}"?`,
+      product.stockQuantity > 0
+        ? `It still has ${product.stockQuantity} ${product.unit?.symbol || ""} in stock. It will be hidden from the POS.`
+        : "It will be hidden from the POS and catalog. Sales history is kept."
+    );
+    if (!ok) return;
+    try {
+      await api.delete(`/products/${product.id}`);
+      showToastSuccess("Product deactivated.");
+      fetchProducts();
+    } catch (err) {
+      showToastError(err.message || "Failed to deactivate product.");
     }
   };
 
   const handleViewHistory = async (product) => {
     setSelectedProduct(product);
+    setPriceHistory([]);
     setShowHistoryModal(true);
     try {
       const res = await api.get(`/products/${product.id}/price-history`);
-      if (res.data) setPriceHistory(res.data);
+      setPriceHistory(res.data || []);
     } catch (err) {
-      console.error("Price history error:", err);
+      showToastError(err.message);
     }
   };
 
-  const filtered = products.filter(
-    (p) =>
-      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (p.sku && p.sku.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (p.barcode && p.barcode.includes(searchTerm))
+  const visibleProducts = useMemo(
+    () => (lowOnly ? products.filter((p) => p.stockQuantity <= p.lowStockAlert) : products),
+    [products, lowOnly]
   );
 
-  const totalStockQty = products.reduce((sum, p) => sum + (parseFloat(p.stockQuantity) || 0), 0);
-  const totalStockValue = products.reduce((sum, p) => {
-    const pQty = parseFloat(p.stockQuantity) || 0;
-    const pCost = parseFloat(p.costPrice) || 0;
-    const activeBatches = p.stockBatches || p.batches || [];
-    if (activeBatches && activeBatches.length > 0) {
-      const batchQtySum = activeBatches.reduce((bAcc, b) => bAcc + (parseFloat(b.remainingQuantity) || 0), 0);
-      const bSum = activeBatches.reduce((bAcc, b) => {
-        const cost = b.costPrice ?? b.costPerUnit ?? pCost;
-        return bAcc + ((parseFloat(b.remainingQuantity) || 0) * cost);
-      }, 0);
-
-      if (batchQtySum > 0 && Math.abs(batchQtySum - pQty) > 0.001) {
-        return sum + (bSum * (pQty / batchQtySum));
+  const stats = useMemo(() => {
+    let qty = 0;
+    let value = 0;
+    let retail = 0;
+    let low = 0;
+    for (const p of products) {
+      const pQty = Math.max(0, parseFloat(p.stockQuantity) || 0);
+      qty += pQty;
+      retail += pQty * (p.salePrice || 0);
+      if (p.stockQuantity <= p.lowStockAlert) low++;
+      if (isAdmin) {
+        // FIFO lot valuation; any stock not covered by lots is valued at the current cost.
+        let remaining = pQty;
+        for (const b of p.stockBatches || []) {
+          const take = Math.min(b.remainingQuantity, remaining);
+          value += take * (b.costPrice ?? p.costPrice ?? 0);
+          remaining -= take;
+        }
+        if (remaining > 0) value += remaining * (p.costPrice || 0);
       }
-      return sum + bSum;
     }
-    return sum + (pQty * pCost);
-  }, 0);
+    return { qty, value, retail, low };
+  }, [products, isAdmin]);
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Fabric Products Catalog"
-        description="Manage your inventory items, pricing, measurement units, and barcode SKUs."
+        description="Manage inventory items, pricing, measurement units, barcodes and stock adjustments."
         action={
-          <Button
-            onClick={() => {
-              setEditingProduct(null);
-              setShowModal(true);
-            }}
-            className="flex items-center gap-2 font-bold"
-          >
-            <Plus className="w-4 h-4" /> Add New Product
-          </Button>
+          isAdmin && (
+            <Button
+              onClick={() => {
+                setEditingProduct(null);
+                setShowModal(true);
+              }}
+              className="flex items-center gap-2 font-bold"
+              tooltip="Add product"
+              shortcut="Alt+Shift+N"
+            >
+              <Plus className="w-4 h-4" /> Add New Product
+            </Button>
+          )
         }
       />
 
-      {/* Stock Investment Summary Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="p-4 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-1">
           <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Catalog Products</span>
-          <div className="text-2xl font-black text-zinc-900 dark:text-zinc-100">{products.length} Items</div>
-          <p className="text-[10px] text-zinc-400">Total registered fabric designs</p>
+          <div className="text-2xl font-black text-zinc-900 dark:text-zinc-100">{products.length}</div>
         </div>
-
         <div className="p-4 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-1">
-          <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Total Remaining Stock</span>
-          <div className="text-2xl font-black text-zinc-900 dark:text-zinc-100">{totalStockQty} Pcs / Units</div>
-          <p className="text-[10px] text-zinc-400">Available physical shop quantity</p>
+          <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Units in Stock</span>
+          <div className="text-2xl font-black text-zinc-900 dark:text-zinc-100">{Math.round(stats.qty * 100) / 100}</div>
         </div>
-
+        <button
+          onClick={() => setLowOnly((v) => !v)}
+          className={`text-left p-4 rounded-2xl border shadow-xs space-y-1 cursor-pointer ${
+            lowOnly ? "bg-amber-500 text-white border-amber-500" : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+          }`}
+        >
+          <span className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1">
+            <AlertTriangle className="w-3 h-3" /> Low / Out of Stock
+          </span>
+          <div className="text-2xl font-black">{stats.low}</div>
+          <p className="text-[10px] opacity-70">{lowOnly ? "Showing only low stock — click to show all" : "Click to filter"}</p>
+        </button>
         <div className="p-4 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 rounded-2xl shadow-md space-y-1">
-          <span className="text-[11px] font-extrabold uppercase tracking-wider opacity-70">Total Stock Investment Value</span>
-          <div className="text-2xl font-black">{formatCurrency(totalStockValue)}</div>
-          <p className="text-[10px] opacity-70">Multi-batch lot cost valuation sum</p>
+          <span className="text-[11px] font-extrabold uppercase tracking-wider opacity-70">{isAdmin ? "Stock Value (cost)" : "Stock Value (retail)"}</span>
+          <div className="text-2xl font-black">{formatCurrency(isAdmin ? stats.value : stats.retail)}</div>
+          {isAdmin && <p className="text-[10px] opacity-70">Retail value {formatCurrency(stats.retail)}</p>}
         </div>
       </div>
 
       <Card>
         {loading ? (
           <Loader text="Loading fabric products catalog..." icon={Package} />
+        ) : loadError ? (
+          <div className="py-10 text-center space-y-3">
+            <p className="text-sm text-red-600">{loadError}</p>
+            <Button onClick={fetchProducts}>
+              <RefreshCw className="w-4 h-4 mr-1.5" /> Retry
+            </Button>
+          </div>
         ) : (
           <ProductTable
-            products={products}
+            products={visibleProducts}
+            isAdmin={isAdmin}
             onEdit={(prod) => {
               setEditingProduct(prod);
               setShowModal(true);
             }}
             onDelete={handleDelete}
             onViewHistory={handleViewHistory}
+            onAdjust={setAdjustProduct}
+            onLabels={setLabelProduct}
           />
         )}
       </Card>
 
-      {/* Product Add/Edit Modal */}
       <ProductFormModal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
@@ -185,9 +227,12 @@ export default function ProductsPage() {
         categories={categories}
         brands={brands}
         units={units}
+        suppliers={suppliers}
       />
 
-      {/* Price History Modal */}
+      <StockAdjustModal isOpen={!!adjustProduct} onClose={() => setAdjustProduct(null)} product={adjustProduct} onDone={fetchProducts} />
+      <BarcodeLabelModal isOpen={!!labelProduct} onClose={() => setLabelProduct(null)} product={labelProduct} />
+
       <Modal
         isOpen={showHistoryModal}
         onClose={() => setShowHistoryModal(false)}
@@ -195,10 +240,8 @@ export default function ProductsPage() {
         maxWidth="max-w-md"
       >
         <div className="space-y-3">
-          <p className="text-xs text-zinc-500">
-            Historical vendor purchase cost entries recorded in stock entries:
-          </p>
-          <div className="divide-y divide-zinc-100 dark:divide-zinc-800 max-h-60 overflow-y-auto">
+          <p className="text-xs text-zinc-500">Purchase cost of each stock entry:</p>
+          <div className="divide-y divide-zinc-100 dark:divide-zinc-800 max-h-72 overflow-y-auto">
             {priceHistory.length === 0 ? (
               <p className="text-xs text-zinc-400 py-4 text-center">No purchase entries recorded yet.</p>
             ) : (
@@ -207,14 +250,18 @@ export default function ProductsPage() {
                   <div>
                     <p className="font-semibold text-zinc-900 dark:text-zinc-100">
                       {formatCurrency(h.costPerUnit)} / {selectedProduct?.unit?.symbol || "unit"}
+                      {h.priceDiff ? (
+                        <span className={`ml-2 text-[10px] ${h.priceDiff > 0 ? "text-red-500" : "text-emerald-600"}`}>
+                          {h.priceDiff > 0 ? "▲" : "▼"} {formatCurrency(Math.abs(h.priceDiff))}
+                        </span>
+                      ) : null}
                     </p>
                     <p className="text-[10px] text-zinc-400">
-                      {formatDateTime(h.purchasedAt)} • Vendor: {h.supplier?.name || "Standard"}
+                      {formatDateTime(h.purchasedAt)} • {h.supplier?.name || "No supplier"}
+                      {h.invoiceNumber ? ` • Inv ${h.invoiceNumber}` : ""}
                     </p>
                   </div>
-                  <span className="font-bold text-zinc-700">
-                    Qty: {h.quantity}
-                  </span>
+                  <span className="font-bold text-zinc-700 dark:text-zinc-300">Qty: {h.quantity}</span>
                 </div>
               ))
             )}

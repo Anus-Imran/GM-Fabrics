@@ -6,3 +6,5 @@ export const requireAdmin = (req, res, next) => {
   }
   next();
 };
+
+export const isAdmin = (user) => user?.role === "ADMIN";

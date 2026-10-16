@@ -5,16 +5,13 @@ import { Badge } from "../common/badge.jsx";
 import { Trash2 } from "lucide-react";
 import { DataTable } from "../common/dataTable.jsx";
 
-export const ExpenseTable = ({ expenses = [], onDelete, onDeleteSelected }) => {
+export const ExpenseTable = ({ list, onDelete, isAdmin }) => {
   const columns = [
-    {
-      key: "date",
-      label: "Date",
-      render: (e) => formatDate(e.date),
-    },
+    { key: "date", label: "Date", sortable: false, render: (e) => formatDate(e.date) },
     {
       key: "title",
       label: "Title / Expense",
+      sortable: false,
       render: (e) => (
         <div>
           <div className="font-semibold text-zinc-900 dark:text-zinc-100">{e.title}</div>
@@ -25,35 +22,44 @@ export const ExpenseTable = ({ expenses = [], onDelete, onDeleteSelected }) => {
     {
       key: "categoryName",
       label: "Category",
-      render: (e) => <Badge variant="default">{e.categoryName}</Badge>,
+      sortable: false,
+      render: (e) => (
+        <div className="flex items-center gap-1">
+          <Badge variant="default">{e.categoryName}</Badge>
+          {e.fromDrawer && <Badge variant="amber">Drawer</Badge>}
+        </div>
+      ),
     },
-    {
-      key: "userName",
-      label: "Recorded By",
-      render: (e) => e.userName,
-    },
+    { key: "userName", label: "Recorded By", sortable: false },
     {
       key: "amount",
       label: "Amount",
+      sortable: false,
       render: (e) => <span className="font-bold text-zinc-900 dark:text-zinc-100">{formatCurrency(e.amount)}</span>,
     },
-    {
-      key: "actions",
-      label: "Action",
-      sortable: false,
-      cellClassName: "text-right",
-      render: (e) => (
-        <button
-          onClick={() => onDelete(e.id)}
-          className="p-1.5 rounded text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
-      ),
-    },
+    ...(isAdmin
+      ? [
+          {
+            key: "actions",
+            label: "Action",
+            sortable: false,
+            cellClassName: "text-right",
+            render: (e) => (
+              <button
+                onClick={() => onDelete(e)}
+                title="Delete expense (admin)"
+                aria-label="Delete expense"
+                className="p-1.5 rounded text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            ),
+          },
+        ]
+      : []),
   ];
 
-  const formattedData = expenses.map((e) => ({
+  const formattedData = (list.items || []).map((e) => ({
     ...e,
     categoryName: e.category?.name || "Other",
     userName: e.user?.name || "Staff",
@@ -64,11 +70,14 @@ export const ExpenseTable = ({ expenses = [], onDelete, onDeleteSelected }) => {
       title="Expenses_History"
       columns={columns}
       data={formattedData}
-      searchKeys={["title", "notes", "categoryName", "userName"]}
+      serverMode
+      totalCount={list.total}
+      onQueryChange={list.setQuery}
+      loading={list.loading}
       dateKey="date"
-      onDeleteSelected={onDeleteSelected}
-      enableSelection={!!onDeleteSelected}
+      enableSelection={false}
       enableDateFilter={true}
+      defaultPageSize={25}
     />
   );
 };

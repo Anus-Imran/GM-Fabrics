@@ -1,7 +1,27 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ProductCard } from "./productCard.jsx";
 
-export const ProductGrid = ({ products = [], categories = [], selectedCategory, setSelectedCategory, onAddToCart }) => {
+const PAGE = 60;
+
+export const ProductGrid = ({ products = [], categories = [], selectedCategory, setSelectedCategory, onAddToCart, cartQtyById }) => {
+  // Render cards in chunks so a large catalog stays fast; more load as you scroll.
+  const [visible, setVisible] = useState(PAGE);
+  const sentinelRef = useRef(null);
+
+  useEffect(() => {
+    setVisible(PAGE);
+  }, [products]);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) setVisible((v) => v + PAGE);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [products, visible]);
+
   return (
     <div className="flex flex-col h-full">
       {/* Category Pills */}
@@ -33,16 +53,17 @@ export const ProductGrid = ({ products = [], categories = [], selectedCategory, 
       </div>
 
       {/* Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto pr-1">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto pr-1 pb-4 content-start">
         {products.length === 0 ? (
-          <div className="col-span-full py-16 text-center text-zinc-400 text-xs">
-            No fabric products found
-          </div>
+          <div className="col-span-full py-16 text-center text-zinc-400 text-xs">No fabric products found</div>
         ) : (
-          products.map((prod) => (
-            <ProductCard key={prod.id} product={prod} onAddToCart={onAddToCart} />
-          ))
+          products
+            .slice(0, visible)
+            .map((prod) => (
+              <ProductCard key={prod.id} product={prod} onAddToCart={onAddToCart} inCartQty={cartQtyById?.get(prod.id) || 0} />
+            ))
         )}
+        {visible < products.length && <div ref={sentinelRef} className="col-span-full h-8" />}
       </div>
     </div>
   );

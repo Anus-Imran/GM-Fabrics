@@ -1,15 +1,12 @@
-import express from "express";
-import * as unitController from "../controllers/unitController.js";
-import { authenticateUser } from "../middleware/authMiddleware.js";
-import { requireAdmin } from "../middleware/adminMiddleware.js";
+import * as unitService from "../services/unitService.js";
+import { buildMasterDataRouter } from "./masterDataRouter.js";
+import { unitBody } from "../validation/schemas.js";
 
-const router = express.Router();
-
-router.use(authenticateUser);
-
-router.get("/", unitController.getUnits);
-router.post("/", requireAdmin, unitController.createUnit);
-router.put("/:id", requireAdmin, unitController.updateUnit);
-router.delete("/:id", requireAdmin, unitController.deleteUnit);
-
-export default router;
+export default buildMasterDataRouter({
+  label: "Units",
+  bodySchema: unitBody,
+  list: () => unitService.getAllUnits(),
+  create: (body) => unitService.createUnit(body),
+  update: (id, body) => unitService.updateUnit(id, body),
+  remove: (id) => unitService.deleteUnit(id),
+});

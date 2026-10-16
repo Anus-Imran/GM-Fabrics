@@ -1,36 +1,22 @@
 import * as backupService from "../services/backupService.js";
-import { sendSuccess, sendError } from "../utils/responseUtil.js";
+import { sendSuccess } from "../utils/responseUtil.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
+import { audit } from "../utils/audit.js";
 
-export const exportData = async (req, res) => {
-  try {
-    const format = (req.query.format || "xlsx").toLowerCase();
+export const exportData = asyncHandler(async (req, res) => {
+  const format = String(req.query.format || "xlsx").toLowerCase();
+  const { buffer, contentType, filename } =
+    format === "csv" ? await backupService.exportAsCsvZip() : await backupService.exportAsExcel();
 
-    if (format === "csv") {
-      const { buffer, contentType, filename } = await backupService.exportAsCsvZip();
-      res.setHeader("Content-Type", contentType);
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-      res.setHeader("Content-Length", buffer.length);
-      return res.send(buffer);
-    }
+  await audit(null, req.user, "DATA_EXPORTED", "System", null, { format });
 
-    // Default: Multi-sheet Excel (.xlsx)
-    const { buffer, contentType, filename } = await backupService.exportAsExcel();
-    res.setHeader("Content-Type", contentType);
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    res.setHeader("Content-Length", buffer.length);
-    return res.send(buffer);
-  } catch (error) {
-    console.error("Backup export error:", error);
-    return sendError(res, error.message || "Failed to export tables data", 500);
-  }
-};
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Length", buffer.length);
+  return res.send(buffer);
+});
 
-export const resetDatabase = async (req, res) => {
-  try {
-    const result = await backupService.resetDatabase();
-    return sendSuccess(res, "Database wiped and reset successfully", result);
-  } catch (error) {
-    console.error("Database reset error:", error);
-    return sendError(res, error.message || "Failed to reset database", 500);
-  }
-};
+export const resetDatabase = asyncHandler(async (req, res) => {
+  const result = await backupService.resetDatabase(req.user, req.body.password);
+  return sendSuccess(res, "Database wiped and reset successfully", result);
+});

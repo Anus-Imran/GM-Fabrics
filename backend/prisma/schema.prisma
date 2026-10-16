@@ -22,20 +22,52 @@ enum SaleStatus {
   COMPLETED
   REFUNDED
   PARTIALLY_REFUNDED
+  VOIDED
+}
+
+enum KhataEntryType {
+  SALE
+  PAYMENT
+  RETURN
+  VOID
+  ADJUSTMENT
+}
+
+enum StockAdjustmentReason {
+  DAMAGE
+  SHRINKAGE
+  COUNT_CORRECTION
+  FOUND
+  OPENING
+  OTHER
+}
+
+enum CashSessionStatus {
+  OPEN
+  CLOSED
 }
 
 // 1. Users & Auth
 model User {
-  id        Int       @id @default(autoincrement())
-  name      String
-  email     String    @unique
-  password  String
-  role      Role      @default(CASHIER)
-  sales     Sale[]
-  expenses  Expense[]
-  notes     Note[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id               Int               @id @default(autoincrement())
+  name             String
+  email            String            @unique
+  password         String
+  role             Role              @default(CASHIER)
+  isActive         Boolean           @default(true)
+  sales            Sale[]            @relation("SaleCashier")
+  voidedSales      Sale[]            @relation("SaleVoidedBy")
+  expenses         Expense[]
+  notes            Note[]
+  returns          Return[]
+  khataEntries     KhataEntry[]
+  stockAdjustments StockAdjustment[]
+  supplierPayments SupplierPayment[]
+  openedSessions   CashSession[]     @relation("SessionOpenedBy")
+  closedSessions   CashSession[]     @relation("SessionClosedBy")
+  auditLogs        AuditLog[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 }
 
 // 2. Units (guzz, metre, kg, grams, pieces, etc.)
@@ -70,7 +102,7 @@ model Brand {
 
 // 5. Suppliers
 model Supplier {
-  id           Int          @id @default(autoincrement())
+  id           Int               @id @default(autoincrement())
   name         String
   phone        String?
   address      String?
@@ -78,8 +110,9 @@ model Supplier {
   notes        String?
   products     Product[]
   stockEntries StockEntry[]
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  payments     SupplierPayment[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
 }
 
 // 6. Products
@@ -108,12 +141,16 @@ model Product {
 
   isActive      Boolean      @default(true)
 
-  stockEntries  StockEntry[]
-  stockBatches  StockBatch[]
-  saleItems     SaleItem[]
-  returnItems   ReturnItem[]
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  stockEntries     StockEntry[]
+  stockBatches     StockBatch[]
+  saleItems        SaleItem[]
+  returnItems      ReturnItem[]
+  stockAdjustments StockAdjustment[]
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([isActive, name])
+  @@index([categoryId])
 }
 
 // 7. Stock Entries (Inventory Purchases & Price Change Tracking)
@@ -124,6 +161,8 @@ model StockEntry {
 
   supplierId          Int?
   supplier            Supplier?    @relation(fields: [supplierId], references: [id])
+
+  invoiceNumber       String?
 
   quantity            Float
   costPerUnit         Float
@@ -136,39 +175,91 @@ model StockEntry {
   purchasedAt         DateTime     @default(now())
   createdAt           DateTime     @default(now())
   stockBatches        StockBatch[]
+
+  @@index([productId])
+  @@index([supplierId])
+  @@index([purchasedAt])
+  @@index([invoiceNumber])
 }
 
 // 7.1 Stock Batches (FIFO Inventory Lot Tracking)
 model StockBatch {
-  id                Int         @id @default(autoincrement())
+  id                Int               @id @default(autoincrement())
   productId         Int
-  product           Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product           Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
   stockEntryId      Int?
-  stockEntry        StockEntry? @relation(fields: [stockEntryId], references: [id], onDelete: SetNull)
+  stockEntry        StockEntry?       @relation(fields: [stockEntryId], references: [id], onDelete: SetNull)
 
   initialQuantity   Float
   remainingQuantity Float
   costPrice         Float
-  sellingPrice      Float       @default(0)
+  sellingPrice      Float             @default(0)
 
   saleItems         SaleItem[]
+  adjustments       StockAdjustment[]
 
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([productId, remainingQuantity])
+  @@index([stockEntryId])
+}
+
+// 7.2 Stock Adjustments (damage, shrinkage, stock-count corrections) — every manual stock change is recorded here
+model StockAdjustment {
+  id         Int                   @id @default(autoincrement())
+  productId  Int
+  product    Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  batchId    Int?
+  batch      StockBatch?           @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  quantity   Float // signed: positive adds stock, negative removes stock
+  costPrice  Float                 @default(0)
+  reason     StockAdjustmentReason
+  notes      String?
+  userId     Int?
+  user       User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt  DateTime              @default(now())
+
+  @@index([productId])
+  @@index([createdAt])
 }
 
 // 8. Customers
 model Customer {
-  id                 Int      @id @default(autoincrement())
+  id                 Int          @id @default(autoincrement())
   name               String
-  phone              String?  @unique
-  cnic               String?  @unique
+  phone              String?      @unique
+  cnic               String?      @unique
   address            String?
   notes              String?
-  outstandingBalance Float    @default(0)
+  outstandingBalance Float        @default(0)
   sales              Sale[]
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  khataEntries       KhataEntry[]
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@index([name])
+}
+
+// 8.1 Khata Ledger — every change to a customer's outstanding balance
+model KhataEntry {
+  id           Int            @id @default(autoincrement())
+  customerId   Int
+  customer     Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  type         KhataEntryType
+  amount       Float // signed: positive increases what the customer owes, negative reduces it
+  balanceAfter Float
+  method       PaymentMethod?
+  saleId       Int?
+  sale         Sale?          @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  returnId     Int?
+  notes        String?
+  userId       Int?
+  user         User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt    DateTime       @default(now())
+
+  @@index([customerId, createdAt])
+  @@index([createdAt])
 }
 
 // 9. Sales
@@ -179,7 +270,7 @@ model Sale {
   customerId     Int?
   customer       Customer?     @relation(fields: [customerId], references: [id])
   userId         Int
-  user           User          @relation(fields: [userId], references: [id])
+  user           User          @relation("SaleCashier", fields: [userId], references: [id])
 
   subtotal       Float
   discountType   String?
@@ -190,15 +281,27 @@ model Sale {
   paymentMethod  PaymentMethod @default(CASH)
   amountPaid     Float
   changeAmount   Float         @default(0)
+  creditAmount   Float         @default(0) // portion of the bill added to the customer's khata
 
   status         SaleStatus    @default(COMPLETED)
   notes          String?
 
+  voidedAt       DateTime?
+  voidedById     Int?
+  voidedBy       User?         @relation("SaleVoidedBy", fields: [voidedById], references: [id])
+  voidReason     String?
+
   saleItems      SaleItem[]
   receipt        Receipt?
   returns        Return[]
+  khataEntries   KhataEntry[]
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
+
+  @@index([createdAt])
+  @@index([status, createdAt])
+  @@index([customerId])
+  @@index([userId])
 }
 
 // 10. Sale Items
@@ -213,14 +316,19 @@ model SaleItem {
 
   quantity    Float
   costPrice   Float        @default(0)
+  listPrice   Float        @default(0) // catalog / lot price before the cashier's per-unit discount
   unitPrice   Float
   subtotal    Float
 
   returnItems ReturnItem[]
   createdAt   DateTime     @default(now())
+
+  @@index([saleId])
+  @@index([productId])
+  @@index([batchId])
 }
 
-// 11. Receipts
+// 11. Receipts (HTML is generated on demand; the row tracks printing)
 model Receipt {
   id          Int       @id @default(autoincrement())
   saleId      Int       @unique
@@ -247,11 +355,14 @@ model Expense {
   category   ExpenseCategory @relation(fields: [categoryId], references: [id])
   amount     Float
   date       DateTime        @default(now())
+  fromDrawer Boolean         @default(false) // paid out of the counter cash drawer
   notes      String?
   userId     Int?
   user       User?           @relation(fields: [userId], references: [id])
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt
+
+  @@index([date])
 }
 
 // 14. Returns
@@ -262,8 +373,13 @@ model Return {
   reason       String?
   refundAmount Float
   refundMethod PaymentMethod @default(CASH)
+  userId       Int?
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   returnItems  ReturnItem[]
   createdAt    DateTime      @default(now())
+
+  @@index([saleId])
+  @@index([createdAt])
 }
 
 // 15. Return Items
@@ -280,9 +396,66 @@ model ReturnItem {
   refundAmount Float
   condition    String   @default("RESTOCK")
   createdAt    DateTime @default(now())
+
+  @@index([saleItemId])
+  @@index([returnId])
 }
 
-// 16. System Notifications
+// 16. Supplier Payments (payables: purchases minus payments = amount owed to supplier)
+model SupplierPayment {
+  id         Int      @id @default(autoincrement())
+  supplierId Int
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  amount     Float
+  method     String   @default("CASH") // CASH | BANK | CHEQUE | OTHER
+  reference  String?
+  fromDrawer Boolean  @default(false)
+  notes      String?
+  paidAt     DateTime @default(now())
+  userId     Int?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now())
+
+  @@index([supplierId, paidAt])
+}
+
+// 17. Cash Drawer Sessions (day open / day close / Z-report)
+model CashSession {
+  id           Int               @id @default(autoincrement())
+  status       CashSessionStatus @default(OPEN)
+  openingCash  Float             @default(0)
+  openedAt     DateTime          @default(now())
+  openedById   Int
+  openedBy     User              @relation("SessionOpenedBy", fields: [openedById], references: [id])
+  closedAt     DateTime?
+  closedById   Int?
+  closedBy     User?             @relation("SessionClosedBy", fields: [closedById], references: [id])
+  expectedCash Float?
+  countedCash  Float?
+  difference   Float?
+  summary      Json?
+  notes        String?
+
+  @@index([status])
+  @@index([openedAt])
+}
+
+// 18. Audit Log — who changed what
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entity, entityId])
+}
+
+// 19. System Notifications
 model Notification {
   id        Int      @id @default(autoincrement())
   type      String
@@ -291,9 +464,11 @@ model Notification {
   isRead    Boolean  @default(false)
   metadata  Json?
   createdAt DateTime @default(now())
+
+  @@index([isRead, createdAt])
 }
 
-// 17. Notes & To-Do Items
+// 20. Notes & To-Do Items
 model Note {
   id          Int       @id @default(autoincrement())
   title       String
@@ -308,7 +483,7 @@ model Note {
   updatedAt   DateTime  @updatedAt
 }
 
-// 18. Legacy AI Logs (Preserved)
+// 21. Legacy AI Logs (unused by the app; kept so existing data is not dropped)
 model AiLog {
   id         Int      @id @default(autoincrement())
   agent      String?

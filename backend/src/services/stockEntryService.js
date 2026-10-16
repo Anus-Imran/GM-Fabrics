@@ -1,199 +1,261 @@
 import { prisma } from "../config/prisma.js";
+import { badRequest, notFound } from "../utils/appError.js";
+import { round2, round3, QTY_EPSILON } from "../utils/money.js";
+import { parseLocalDateTime, resolveRange } from "../utils/time.js";
+import { audit } from "../utils/audit.js";
+import { lockProducts, notifyLowStockIfCrossed } from "./inventoryService.js";
+
+const TX_OPTIONS = { maxWait: 10000, timeout: 30000 };
+
+const entryInclude = {
+  product: { include: { unit: true, category: true, brand: true } },
+  supplier: true,
+  stockBatches: { select: { id: true, initialQuantity: true, remainingQuantity: true, sellingPrice: true, costPrice: true } },
+};
+
+// How much of an entry's lot has left the shelf (sold, adjusted, etc.).
+const consumedOf = (entry) =>
+  round3((entry.stockBatches || []).reduce((s, b) => s + Math.max(0, b.initialQuantity - b.remainingQuantity), 0));
+
+const decorate = (entry) => ({
+  ...entry,
+  soldQuantity: consumedOf(entry),
+  remainingQuantity: round3((entry.stockBatches || []).reduce((s, b) => s + b.remainingQuantity, 0)),
+});
 
 export const getAllStockEntries = async (filters = {}) => {
+  const page = filters.page || 1;
+  const pageSize = filters.pageSize || 25;
   const where = {};
   if (filters.productId) where.productId = parseInt(filters.productId, 10);
   if (filters.supplierId) where.supplierId = parseInt(filters.supplierId, 10);
+  if (filters.from || filters.to) {
+    const { start, end } = resolveRange({ from: filters.from, to: filters.to });
+    where.purchasedAt = { gte: start, lte: end };
+  }
+  if (filters.search) {
+    where.OR = [
+      { product: { name: { contains: filters.search, mode: "insensitive" } } },
+      { supplier: { name: { contains: filters.search, mode: "insensitive" } } },
+      { invoiceNumber: { contains: filters.search, mode: "insensitive" } },
+      { notes: { contains: filters.search, mode: "insensitive" } },
+    ];
+  }
 
-  return prisma.stockEntry.findMany({
-    where,
-    include: {
-      product: {
-        include: { unit: true, category: true, brand: true },
-      },
-      supplier: true,
-      stockBatches: {
-        include: {
-          saleItems: true,
-        },
-      },
-    },
-    orderBy: { purchasedAt: "desc" },
-  });
+  const [items, total, sums] = await Promise.all([
+    prisma.stockEntry.findMany({
+      where,
+      include: entryInclude,
+      orderBy: { purchasedAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+    prisma.stockEntry.count({ where }),
+    prisma.stockEntry.aggregate({ where, _sum: { totalCost: true, quantity: true } }),
+  ]);
+
+  return {
+    items: items.map(decorate),
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    summary: { totalCost: round2(sums._sum.totalCost || 0), totalQuantity: round3(sums._sum.quantity || 0) },
+  };
 };
 
 export const getStockEntryById = async (id) => {
-  const entryId = parseInt(id, 10);
-  const entry = await prisma.stockEntry.findUnique({
-    where: { id: entryId },
-    include: {
-      product: {
-        include: { unit: true, category: true, brand: true },
-      },
-      supplier: true,
-      stockBatches: {
-        include: {
-          saleItems: true,
-        },
-      },
+  const entry = await prisma.stockEntry.findUnique({ where: { id }, include: entryInclude });
+  if (!entry) throw notFound("Stock entry not found");
+  return decorate(entry);
+};
+
+/** Adds one purchased lot inside an open transaction. */
+const addPurchaseLine = async (tx, { productId, supplierId, invoiceNumber, quantity, costPerUnit, newSalePrice, notes, purchasedAt }) => {
+  const product = await tx.product.findUnique({ where: { id: productId }, include: { unit: true } });
+  if (!product) throw badRequest(`Product ID ${productId} not found`);
+  if (!product.isActive) throw badRequest(`"${product.name}" is deleted — restore it before adding stock`);
+  if (product.unit && !product.unit.allowDecimal && Math.abs(quantity - Math.round(quantity)) > QTY_EPSILON) {
+    throw badRequest(`"${product.name}" is counted in whole ${product.unit.name} — ${quantity} is not allowed`);
+  }
+
+  const qty = round3(quantity);
+  const cost = round2(costPerUnit);
+  const previousCostPerUnit = product.costPrice || 0;
+  const salePrice = newSalePrice && newSalePrice > 0 ? round2(newSalePrice) : product.salePrice || 0;
+
+  const entry = await tx.stockEntry.create({
+    data: {
+      productId,
+      supplierId: supplierId || null,
+      invoiceNumber: invoiceNumber || null,
+      quantity: qty,
+      costPerUnit: cost,
+      totalCost: round2(qty * cost),
+      previousCostPerUnit,
+      priceDiff: round2(cost - previousCostPerUnit),
+      notes: notes || null,
+      purchasedAt,
     },
   });
-  if (!entry) throw new Error("Stock entry not found");
+
+  await tx.stockBatch.create({
+    data: {
+      productId,
+      stockEntryId: entry.id,
+      initialQuantity: qty,
+      remainingQuantity: qty,
+      costPrice: cost,
+      sellingPrice: salePrice,
+      createdAt: purchasedAt,
+    },
+  });
+
+  const updated = await tx.product.update({
+    where: { id: productId },
+    data: {
+      stockQuantity: { increment: qty },
+      costPrice: cost,
+      ...(supplierId ? { supplierId } : {}),
+      ...(newSalePrice && newSalePrice > 0 ? { salePrice: round2(newSalePrice) } : {}),
+    },
+  });
+  await notifyLowStockIfCrossed(tx, product, product.stockQuantity, updated.stockQuantity);
+
   return entry;
 };
 
-export const createStockEntry = async (data) => {
-  const { productId, supplierId, quantity, costPerUnit, newSalePrice, notes, purchasedAt } = data;
-
-  const prodId = parseInt(productId, 10);
-  const qty = parseFloat(quantity);
-  const costUnit = parseFloat(costPerUnit);
-  const totalCost = qty * costUnit;
-  const parsedNewSalePrice = newSalePrice ? parseFloat(newSalePrice) : null;
-
-  if (qty <= 0) throw new Error("Quantity must be greater than zero");
-  if (costUnit < 0) throw new Error("Cost per unit cannot be negative");
-
-  return prisma.$transaction(async (tx) => {
-    // 1. Fetch existing product
-    const product = await tx.product.findUnique({
-      where: { id: prodId },
-    });
-
-    if (!product) throw new Error("Product not found");
-
-    const previousCostPerUnit = product.costPrice || 0;
-    const priceDiff = costUnit - previousCostPerUnit;
-
-    // 2. Create StockEntry
-    const stockEntry = await tx.stockEntry.create({
-      data: {
-        productId: prodId,
-        supplierId: supplierId ? parseInt(supplierId, 10) : null,
-        quantity: qty,
-        costPerUnit: costUnit,
-        totalCost,
-        previousCostPerUnit,
-        priceDiff,
-        notes: notes || null,
-        purchasedAt: purchasedAt ? new Date(purchasedAt) : new Date(),
-      },
-      include: {
-        product: { include: { unit: true, category: true, brand: true } },
-        supplier: true,
-      },
-    });
-
-    const batchSalePrice = parsedNewSalePrice && parsedNewSalePrice > 0 ? parsedNewSalePrice : (product.salePrice || 0);
-
-    // 3. Create independent StockBatch for this purchase lot
-    await tx.stockBatch.create({
-      data: {
-        productId: prodId,
-        stockEntryId: stockEntry.id,
-        initialQuantity: qty,
-        remainingQuantity: qty,
-        costPrice: costUnit,
-        sellingPrice: batchSalePrice,
-        createdAt: purchasedAt ? new Date(purchasedAt) : new Date(),
-      },
-    });
-
-    // 4. Update Product stock, latest cost price snapshot, and optional new sale price
-    // Aggregate exact remainingQuantity from all batches to prevent any drift
-    const batchSum = await tx.stockBatch.aggregate({
-      where: { productId: prodId },
-      _sum: { remainingQuantity: true },
-    });
-    const exactStockQuantity = batchSum._sum.remainingQuantity ?? (product.stockQuantity + qty);
-
-    const updateProductData = {
-      stockQuantity: Math.max(0, exactStockQuantity),
-      costPrice: costUnit,
-      supplierId: supplierId ? parseInt(supplierId, 10) : product.supplierId,
-    };
-
-    if (parsedNewSalePrice && parsedNewSalePrice > 0) {
-      updateProductData.salePrice = parsedNewSalePrice;
-    }
-
-    await tx.product.update({
-      where: { id: prodId },
-      data: updateProductData,
-    });
-
-    return stockEntry;
-  }, {
-    maxWait: 10000,
-    timeout: 30000,
-  });
+const resolvePurchaseDate = (value) => {
+  if (!value) return new Date();
+  const date = parseLocalDateTime(value);
+  if (!date || isNaN(date.getTime())) throw badRequest("Invalid purchase date");
+  if (date.getTime() > Date.now() + 24 * 3600 * 1000) throw badRequest("Purchase date cannot be in the future");
+  return date;
 };
 
-export const updateStockEntry = async (id, data) => {
-  const entryId = parseInt(id, 10);
-  const { productId, supplierId, quantity, costPerUnit, newSalePrice, notes, purchasedAt } = data;
+export const createStockEntry = async (user, data) => {
+  const purchasedAt = resolvePurchaseDate(data.purchasedAt);
+  const entryId = await prisma.$transaction(async (tx) => {
+    await lockProducts(tx, [data.productId]);
+    const entry = await addPurchaseLine(tx, { ...data, purchasedAt });
+    await audit(tx, user, "STOCK_PURCHASED", "StockEntry", entry.id, {
+      productId: data.productId,
+      quantity: data.quantity,
+      costPerUnit: data.costPerUnit,
+      invoiceNumber: data.invoiceNumber || null,
+    });
+    return entry.id;
+  }, TX_OPTIONS);
+  return getStockEntryById(entryId);
+};
 
-  return prisma.$transaction(async (tx) => {
-    // 1. Fetch current StockEntry with associated product and batches
-    const existingEntry = await tx.stockEntry.findUnique({
-      where: { id: entryId },
-      include: {
-        product: true,
-        stockBatches: {
-          include: { saleItems: true },
+/** Multi-item purchase invoice: several products from one supplier, optionally with a payment. */
+export const createBulkStockEntries = async (user, data) => {
+  const purchasedAt = resolvePurchaseDate(data.purchasedAt);
+
+  const ids = await prisma.$transaction(async (tx) => {
+    if (data.supplierId) {
+      const supplier = await tx.supplier.findUnique({ where: { id: data.supplierId } });
+      if (!supplier) throw badRequest("Selected supplier was not found");
+    }
+    await lockProducts(tx, data.items.map((i) => i.productId));
+
+    const created = [];
+    for (const item of data.items) {
+      const entry = await addPurchaseLine(tx, {
+        ...item,
+        supplierId: data.supplierId,
+        invoiceNumber: data.invoiceNumber,
+        notes: data.notes,
+        purchasedAt,
+      });
+      created.push(entry);
+    }
+
+    const invoiceTotal = round2(created.reduce((s, e) => s + e.totalCost, 0));
+    if (data.amountPaid && data.amountPaid > 0) {
+      if (!data.supplierId) throw badRequest("Select a supplier to record a payment against this invoice");
+      await tx.supplierPayment.create({
+        data: {
+          supplierId: data.supplierId,
+          amount: round2(data.amountPaid),
+          method: data.paymentMethod || "CASH",
+          reference: data.invoiceNumber || null,
+          fromDrawer: !!data.fromDrawer,
+          notes: `Payment with purchase invoice ${data.invoiceNumber || ""}`.trim(),
+          paidAt: purchasedAt,
+          userId: user.id,
         },
-      },
+      });
+    }
+
+    await audit(tx, user, "PURCHASE_INVOICE", "StockEntry", data.invoiceNumber || created[0].id, {
+      supplierId: data.supplierId || null,
+      lines: created.length,
+      invoiceTotal,
+      amountPaid: data.amountPaid || 0,
     });
 
-    if (!existingEntry) throw new Error("Stock purchase entry not found");
+    return created.map((e) => e.id);
+  }, TX_OPTIONS);
 
-    const targetProductId = productId ? parseInt(productId, 10) : existingEntry.productId;
-    const isProductChanged = targetProductId !== existingEntry.productId;
+  return prisma.stockEntry.findMany({ where: { id: { in: ids } }, include: entryInclude }).then((rows) => rows.map(decorate));
+};
 
-    const newQty = quantity !== undefined ? parseFloat(quantity) : existingEntry.quantity;
-    const newCost = costPerUnit !== undefined ? parseFloat(costPerUnit) : existingEntry.costPerUnit;
-    const parsedNewSalePrice = newSalePrice !== undefined && newSalePrice !== null && newSalePrice !== ""
-      ? parseFloat(newSalePrice)
-      : null;
+/** Resets a product's cost/supplier snapshot to its latest remaining purchase. */
+const syncLatestCost = async (tx, productId) => {
+  const latest = await tx.stockEntry.findFirst({ where: { productId }, orderBy: { purchasedAt: "desc" } });
+  if (latest) {
+    await tx.product.update({
+      where: { id: productId },
+      data: { costPrice: latest.costPerUnit, ...(latest.supplierId ? { supplierId: latest.supplierId } : {}) },
+    });
+  }
+};
 
-    if (newQty <= 0) throw new Error("Quantity must be greater than zero");
-    if (newCost < 0) throw new Error("Cost per unit cannot be negative");
+export const updateStockEntry = async (user, id, data) => {
+  await prisma.$transaction(async (tx) => {
+    const existing = await tx.stockEntry.findUnique({
+      where: { id },
+      include: { product: true, stockBatches: { include: { _count: { select: { saleItems: true } } } } },
+    });
+    if (!existing) throw notFound("Stock purchase entry not found");
 
-    // Check associated batches for POS sales history
-    const entryBatches = existingEntry.stockBatches || [];
-    const mainBatch = entryBatches.length > 0 ? entryBatches[0] : null;
+    const targetProductId = data.productId || existing.productId;
+    const isProductChanged = targetProductId !== existing.productId;
+    await lockProducts(tx, [existing.productId, targetProductId]);
 
-    let soldQuantity = 0;
-    if (mainBatch) {
-      soldQuantity = Math.max(0, (mainBatch.initialQuantity || 0) - (mainBatch.remainingQuantity || 0));
-      if (mainBatch.saleItems && mainBatch.saleItems.length > 0) {
-        const saleItemsSum = mainBatch.saleItems.reduce((acc, si) => acc + (si.quantity || 0), 0);
-        soldQuantity = Math.max(soldQuantity, saleItemsSum);
-      }
+    const newQty = data.quantity !== undefined ? round3(data.quantity) : existing.quantity;
+    const newCost = data.costPerUnit !== undefined ? round2(data.costPerUnit) : existing.costPerUnit;
+    const purchaseDate = data.purchasedAt ? resolvePurchaseDate(data.purchasedAt) : existing.purchasedAt;
+
+    const mainBatch = existing.stockBatches[0] || null;
+    const consumed = mainBatch ? round3(Math.max(0, mainBatch.initialQuantity - mainBatch.remainingQuantity)) : 0;
+    const hasSales = mainBatch ? mainBatch._count.saleItems > 0 : false;
+
+    if (isProductChanged && (consumed > QTY_EPSILON || hasSales)) {
+      throw badRequest(`Cannot change the product: ${consumed} units from this purchase lot have already been sold or adjusted.`);
+    }
+    if (newQty + QTY_EPSILON < consumed) {
+      throw badRequest(`Cannot reduce purchase quantity to ${newQty}: ${consumed} units from this lot are already sold. Minimum is ${consumed}.`);
     }
 
-    if (isProductChanged && soldQuantity > 0) {
-      throw new Error(`Cannot change fabric product because ${soldQuantity} units from this purchase lot have already been sold in POS sales.`);
-    }
-
-    if (newQty < soldQuantity) {
-      throw new Error(`Cannot reduce purchase quantity to ${newQty} because ${soldQuantity} units have already been sold from this lot. Minimum allowable quantity is ${soldQuantity}.`);
-    }
-
-    const purchaseDate = purchasedAt ? new Date(purchasedAt) : existingEntry.purchasedAt;
     const targetProduct = isProductChanged
-      ? await tx.product.findUnique({ where: { id: targetProductId } })
-      : existingEntry.product;
+      ? await tx.product.findUnique({ where: { id: targetProductId }, include: { unit: true } })
+      : existing.product;
+    if (!targetProduct) throw badRequest("Selected product not found");
 
-    if (!targetProduct) throw new Error("Selected product not found");
+    const salePrice =
+      data.newSalePrice && data.newSalePrice > 0
+        ? round2(data.newSalePrice)
+        : mainBatch?.sellingPrice > 0
+        ? mainBatch.sellingPrice
+        : targetProduct.salePrice || 0;
 
-    const batchSalePrice = parsedNewSalePrice && parsedNewSalePrice > 0
-      ? parsedNewSalePrice
-      : (mainBatch?.sellingPrice > 0 ? mainBatch.sellingPrice : (targetProduct.salePrice || 0));
+    const oldRemaining = mainBatch ? mainBatch.remainingQuantity : 0;
+    const newRemaining = round3(Math.max(0, newQty - consumed));
 
-    // 2. Synchronize StockBatch
     if (mainBatch) {
-      const newRemaining = Math.max(0, newQty - soldQuantity);
       await tx.stockBatch.update({
         where: { id: mainBatch.id },
         data: {
@@ -201,217 +263,109 @@ export const updateStockEntry = async (id, data) => {
           initialQuantity: newQty,
           remainingQuantity: newRemaining,
           costPrice: newCost,
-          sellingPrice: batchSalePrice,
+          sellingPrice: salePrice,
           createdAt: purchaseDate,
         },
       });
     } else {
-      // Recreate batch if missing from legacy records
       await tx.stockBatch.create({
         data: {
           productId: targetProductId,
-          stockEntryId: entryId,
+          stockEntryId: id,
           initialQuantity: newQty,
-          remainingQuantity: newQty,
+          remainingQuantity: newRemaining,
           costPrice: newCost,
-          sellingPrice: batchSalePrice,
+          sellingPrice: salePrice,
           createdAt: purchaseDate,
         },
       });
     }
 
-    // 3. Recalculate price diff and total cost
-    const totalCost = newQty * newCost;
-    const previousCostPerUnit = isProductChanged ? (targetProduct.costPrice || 0) : (existingEntry.previousCostPerUnit ?? 0);
-    const priceDiff = newCost - previousCostPerUnit;
+    // Move stock by the change in this lot only, so other lots / legacy stock are untouched.
+    if (isProductChanged) {
+      await tx.product.update({
+        where: { id: existing.productId },
+        data: { stockQuantity: round3(Math.max(0, existing.product.stockQuantity - oldRemaining)) },
+      });
+      await tx.product.update({ where: { id: targetProductId }, data: { stockQuantity: { increment: newRemaining } } });
+    } else {
+      await tx.product.update({
+        where: { id: targetProductId },
+        data: { stockQuantity: round3(Math.max(0, existing.product.stockQuantity + (newRemaining - oldRemaining))) },
+      });
+    }
 
-    // 4. Update StockEntry
-    const updatedEntry = await tx.stockEntry.update({
-      where: { id: entryId },
+    const previousCostPerUnit = isProductChanged ? targetProduct.costPrice || 0 : existing.previousCostPerUnit ?? 0;
+    await tx.stockEntry.update({
+      where: { id },
       data: {
         productId: targetProductId,
-        supplierId: supplierId !== undefined ? (supplierId ? parseInt(supplierId, 10) : null) : existingEntry.supplierId,
+        supplierId: data.supplierId !== undefined ? data.supplierId || null : existing.supplierId,
+        invoiceNumber: data.invoiceNumber !== undefined ? data.invoiceNumber || null : existing.invoiceNumber,
         quantity: newQty,
         costPerUnit: newCost,
-        totalCost,
+        totalCost: round2(newQty * newCost),
         previousCostPerUnit,
-        priceDiff,
-        notes: notes !== undefined ? (notes || null) : existingEntry.notes,
+        priceDiff: round2(newCost - previousCostPerUnit),
+        notes: data.notes !== undefined ? data.notes || null : existing.notes,
         purchasedAt: purchaseDate,
       },
-      include: {
-        product: { include: { unit: true, category: true, brand: true } },
-        supplier: true,
-        stockBatches: {
-          include: { saleItems: true },
-        },
-      },
     });
 
-    // 5. Product stock and pricing synchronization function
-    const syncProductStockAndPricing = async (pId, latestCostOverride = null) => {
-      // Aggregate exact remaining quantity across all active batches
-      const batchSum = await tx.stockBatch.aggregate({
-        where: { productId: pId },
-        _sum: { remainingQuantity: true },
-      });
-      const newStockQuantity = batchSum._sum.remainingQuantity ?? 0;
-
-      // Determine latest active cost price and vendor from most recent entry
-      const latestEntry = await tx.stockEntry.findFirst({
-        where: { productId: pId },
-        orderBy: { purchasedAt: "desc" },
-      });
-
-      let latestCostPrice = 0;
-      let latestSupplierId = null;
-
-      if (latestEntry && latestEntry.id === entryId && latestCostOverride !== null) {
-        latestCostPrice = latestCostOverride;
-        latestSupplierId = updatedEntry.supplierId;
-      } else if (latestEntry) {
-        latestCostPrice = latestEntry.costPerUnit;
-        latestSupplierId = latestEntry.supplierId;
-      } else {
-        const initialBatch = await tx.stockBatch.findFirst({
-          where: { productId: pId, stockEntryId: null },
-        });
-        latestCostPrice = initialBatch?.costPrice ?? 0;
-      }
-
-      const prodData = {
-        stockQuantity: Math.max(0, newStockQuantity),
-        costPrice: latestCostPrice,
-      };
-
-      if (latestSupplierId !== null) {
-        prodData.supplierId = latestSupplierId;
-      }
-
-      if (parsedNewSalePrice && parsedNewSalePrice > 0 && pId === targetProductId) {
-        prodData.salePrice = parsedNewSalePrice;
-      }
-
-      await tx.product.update({
-        where: { id: pId },
-        data: prodData,
-      });
-    };
-
-    await syncProductStockAndPricing(targetProductId, newCost);
-
-    if (isProductChanged) {
-      await syncProductStockAndPricing(existingEntry.productId);
+    if (data.newSalePrice && data.newSalePrice > 0) {
+      await tx.product.update({ where: { id: targetProductId }, data: { salePrice: round2(data.newSalePrice) } });
     }
+    await syncLatestCost(tx, targetProductId);
+    if (isProductChanged) await syncLatestCost(tx, existing.productId);
 
-    return updatedEntry;
-  }, {
-    maxWait: 10000,
-    timeout: 30000,
-  });
+    await audit(tx, user, "STOCK_ENTRY_UPDATED", "StockEntry", id, {
+      before: { productId: existing.productId, quantity: existing.quantity, costPerUnit: existing.costPerUnit },
+      after: { productId: targetProductId, quantity: newQty, costPerUnit: newCost },
+    });
+  }, TX_OPTIONS);
+
+  return getStockEntryById(id);
 };
 
-export const deleteStockEntry = async (id) => {
-  const entryId = parseInt(id, 10);
-
-  return prisma.$transaction(async (tx) => {
-    // 1. Fetch current entry with batches and product
-    const entry = await tx.stockEntry.findUnique({
-      where: { id: entryId },
-      include: {
-        product: true,
-        stockBatches: {
-          include: { saleItems: true },
-        },
-      },
-    });
-
-    if (!entry) throw new Error("Stock purchase entry not found");
-
-    const batches = entry.stockBatches || [];
-    let soldQuantity = 0;
-    let hasSales = false;
-
-    for (const batch of batches) {
-      const sold = Math.max(0, (batch.initialQuantity || 0) - (batch.remainingQuantity || 0));
-      if (sold > 0) soldQuantity += sold;
-      if (batch.saleItems && batch.saleItems.length > 0) {
-        hasSales = true;
-      }
-    }
-
-    if (hasSales || soldQuantity > 0) {
-      throw new Error(
-        `Cannot delete this purchase entry: ${soldQuantity > 0 ? soldQuantity : "some"} units have already been sold in POS customer sales. Deleting this purchase lot would compromise financial audit integrity and stock batch balance.`
-      );
-    }
-
-    // 2. Delete the associated StockBatches (safe: no sales recorded against this lot)
-    for (const batch of batches) {
-      await tx.stockBatch.delete({
-        where: { id: batch.id },
-      });
-    }
-
-    // 3. Delete the StockEntry
-    await tx.stockEntry.delete({
-      where: { id: entryId },
-    });
-
-    // 4. Synchronize Product stockQuantity, costPrice, and supplier
-    const productId = entry.productId;
-
-    const batchSum = await tx.stockBatch.aggregate({
-      where: { productId },
-      _sum: { remainingQuantity: true },
-    });
-    const newStockQuantity = batchSum._sum.remainingQuantity ?? Math.max(0, entry.product.stockQuantity - entry.quantity);
-
-    // Revert cost price to the latest remaining stock purchase or initial batch
-    const latestRemainingEntry = await tx.stockEntry.findFirst({
-      where: { productId },
-      orderBy: { purchasedAt: "desc" },
-    });
-
-    let revertCostPrice = 0;
-    let revertSupplierId = null;
-
-    if (latestRemainingEntry) {
-      revertCostPrice = latestRemainingEntry.costPerUnit;
-      revertSupplierId = latestRemainingEntry.supplierId;
-    } else {
-      const initialBatch = await tx.stockBatch.findFirst({
-        where: { productId, stockEntryId: null },
-      });
-      revertCostPrice = initialBatch?.costPrice ?? 0;
-    }
-
-    await tx.product.update({
-      where: { id: productId },
-      data: {
-        stockQuantity: Math.max(0, newStockQuantity),
-        costPrice: revertCostPrice,
-        ...(revertSupplierId ? { supplierId: revertSupplierId } : {}),
-      },
-    });
-
-    return { message: "Stock purchase entry deleted successfully", id: entryId };
-  }, {
-    maxWait: 10000,
-    timeout: 30000,
+const deleteEntryInTx = async (tx, user, id) => {
+  const entry = await tx.stockEntry.findUnique({
+    where: { id },
+    include: { product: true, stockBatches: { include: { _count: { select: { saleItems: true, adjustments: true } } } } },
   });
-};
+  if (!entry) throw notFound(`Stock purchase entry #${id} not found`);
+  await lockProducts(tx, [entry.productId]);
 
-export const deleteManyStockEntries = async (ids) => {
-  if (!Array.isArray(ids) || ids.length === 0) {
-    throw new Error("No purchase entries provided for deletion");
+  const consumed = consumedOf(entry);
+  const linked = entry.stockBatches.some((b) => b._count.saleItems > 0 || b._count.adjustments > 0);
+  if (consumed > QTY_EPSILON || linked) {
+    throw badRequest(
+      `Cannot delete purchase #${id} (${entry.product.name}): ${consumed > 0 ? consumed : "some"} units from this lot were already sold or adjusted.`
+    );
   }
 
-  const results = [];
-  for (const id of ids) {
-    const res = await deleteStockEntry(id);
-    results.push(res);
-  }
-  return results;
+  const remaining = round3(entry.stockBatches.reduce((s, b) => s + b.remainingQuantity, 0));
+  await tx.stockBatch.deleteMany({ where: { stockEntryId: id } });
+  await tx.stockEntry.delete({ where: { id } });
+  await tx.product.update({
+    where: { id: entry.productId },
+    data: { stockQuantity: round3(Math.max(0, entry.product.stockQuantity - remaining)) },
+  });
+  await syncLatestCost(tx, entry.productId);
+
+  await audit(tx, user, "STOCK_ENTRY_DELETED", "StockEntry", id, {
+    product: entry.product.name,
+    quantity: entry.quantity,
+    costPerUnit: entry.costPerUnit,
+  });
+  return { id };
 };
 
+export const deleteStockEntry = (user, id) => prisma.$transaction((tx) => deleteEntryInTx(tx, user, id), TX_OPTIONS);
+
+// All-or-nothing: if any entry cannot be deleted, none are.
+export const deleteManyStockEntries = (user, ids) =>
+  prisma.$transaction(async (tx) => {
+    const results = [];
+    for (const id of ids) results.push(await deleteEntryInTx(tx, user, id));
+    return results;
+  }, { maxWait: 10000, timeout: 60000 });

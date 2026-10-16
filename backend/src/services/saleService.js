@@ -1,404 +1,414 @@
 import { prisma } from "../config/prisma.js";
 import { generateSaleNumber } from "../utils/saleNumberUtil.js";
 import { generateReceiptHtml } from "../utils/receiptUtil.js";
+import { badRequest, notFound, forbidden } from "../utils/appError.js";
+import { round2, round3, QTY_EPSILON } from "../utils/money.js";
+import { parseLocalDateTime, resolveRange } from "../utils/time.js";
+import { audit } from "../utils/audit.js";
+import { isAdmin } from "../middleware/adminMiddleware.js";
+import {
+  lockProducts,
+  getActiveBatches,
+  planConsumption,
+  applyBatchDeductions,
+  assertQuantityAllowed,
+  notifyLowStockIfCrossed,
+  restoreStock,
+} from "./inventoryService.js";
+import { postKhataEntry } from "./khataService.js";
 
-export const getAllSales = async (filters = {}) => {
+const TX_OPTIONS = { maxWait: 10000, timeout: 30000 };
+
+const saleDetailInclude = {
+  customer: true,
+  user: { select: { id: true, name: true } },
+  voidedBy: { select: { id: true, name: true } },
+  saleItems: {
+    include: { product: { include: { unit: true, category: true, brand: true } } },
+    orderBy: { id: "asc" },
+  },
+  receipt: { select: { id: true, printCount: true, lastPrintAt: true } },
+  returns: { include: { returnItems: true }, orderBy: { createdAt: "asc" } },
+};
+
+/** Adds the generated receipt HTML to a sale object (receipts are rendered on demand). */
+export const withReceipt = (sale) => {
+  if (!sale) return sale;
+  return {
+    ...sale,
+    receipt: { ...(sale.receipt || {}), receiptHtml: generateReceiptHtml(sale) },
+  };
+};
+
+const buildSalesWhere = (filters) => {
   const where = {};
-
   if (filters.status) where.status = filters.status;
   if (filters.paymentMethod) where.paymentMethod = filters.paymentMethod;
-  if (filters.customerId) where.customerId = parseInt(filters.customerId, 10);
-  if (filters.userId) where.userId = parseInt(filters.userId, 10);
+  if (filters.customerId) where.customerId = filters.customerId;
+  if (filters.userId) where.userId = filters.userId;
 
-  if (filters.from && filters.to) {
-    where.createdAt = {
-      gte: new Date(filters.from),
-      lte: new Date(filters.to),
-    };
+  if (filters.from || filters.to) {
+    const { start, end } = resolveRange({ from: filters.from, to: filters.to });
+    where.createdAt = { gte: start, lte: end };
   }
 
-  return prisma.sale.findMany({
-    where,
-    include: {
-      customer: { select: { id: true, name: true, phone: true } },
-      user: { select: { id: true, name: true, role: true } },
-      saleItems: {
-        include: {
-          product: { select: { id: true, name: true, unit: true } },
-        },
+  if (filters.search) {
+    const term = filters.search;
+    where.OR = [
+      { saleNumber: { contains: term, mode: "insensitive" } },
+      { customer: { name: { contains: term, mode: "insensitive" } } },
+      { customer: { phone: { contains: term } } },
+      { notes: { contains: term, mode: "insensitive" } },
+    ];
+  }
+  return where;
+};
+
+/** Paginated sales list — lean rows for the sales history table. */
+export const getAllSales = async (filters = {}) => {
+  const page = filters.page || 1;
+  const pageSize = filters.pageSize || 25;
+  const where = buildSalesWhere(filters);
+
+  const sortable = ["createdAt", "totalAmount", "saleNumber", "status", "paymentMethod"];
+  const sortBy = sortable.includes(filters.sortBy) ? filters.sortBy : "createdAt";
+  const sortDir = filters.sortDir || "desc";
+
+  const [items, total, sums] = await Promise.all([
+    prisma.sale.findMany({
+      where,
+      select: {
+        id: true,
+        saleNumber: true,
+        createdAt: true,
+        subtotal: true,
+        discountAmount: true,
+        totalAmount: true,
+        amountPaid: true,
+        changeAmount: true,
+        creditAmount: true,
+        paymentMethod: true,
+        status: true,
+        notes: true,
+        voidReason: true,
+        customer: { select: { id: true, name: true, phone: true } },
+        user: { select: { id: true, name: true } },
+        _count: { select: { saleItems: true, returns: true } },
+        returns: { select: { refundAmount: true } },
       },
-      receipt: true,
-      returns: {
-        include: { returnItems: true },
-      },
+      orderBy: { [sortBy]: sortDir },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+    prisma.sale.count({ where }),
+    prisma.sale.aggregate({
+      where: { ...where, status: where.status || { not: "VOIDED" } },
+      _sum: { totalAmount: true, discountAmount: true },
+    }),
+  ]);
+
+  return {
+    items: items.map((s) => ({
+      ...s,
+      refundedAmount: round2(s.returns.reduce((sum, r) => sum + r.refundAmount, 0)),
+      returns: undefined,
+    })),
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    summary: {
+      totalAmount: round2(sums._sum.totalAmount || 0),
+      totalDiscount: round2(sums._sum.discountAmount || 0),
     },
-    orderBy: { createdAt: "desc" },
-  });
+  };
 };
 
 export const getSaleById = async (idOrNumber) => {
   const term = String(idOrNumber).trim();
   const numericId = parseInt(term, 10);
-  const isNumeric = !isNaN(numericId) && String(numericId) === term;
+  const isNumeric = !isNaN(numericId) && String(numericId) === term && numericId < 2147483647;
 
   const sale = await prisma.sale.findFirst({
     where: isNumeric
       ? { OR: [{ id: numericId }, { saleNumber: { equals: term, mode: "insensitive" } }] }
       : { saleNumber: { equals: term, mode: "insensitive" } },
-    include: {
-      customer: true,
-      user: { select: { id: true, name: true, email: true } },
-      saleItems: {
-        include: {
-          product: { include: { unit: true, category: true, brand: true } },
-        },
-      },
-      receipt: true,
-      returns: {
-        include: { returnItems: true },
-      },
-    },
+    include: saleDetailInclude,
   });
 
-  if (!sale) throw new Error(`Sale bill "${term}" not found`);
-  return sale;
+  if (!sale) throw notFound(`Sale bill "${term}" not found`);
+  return withReceipt(sale);
 };
 
-export const createSale = async (userId, data) => {
-  const {
-    customerId,
-    newCustomer,
-    customerName,
-    customerPhone,
-    customerCity,
-    customerAddress,
-    items, // array of { productId, quantity, unitPrice }
-    discountType, // "PERCENTAGE" | "FLAT" | null
-    discountValue, // number
-    paymentMethod, // "CASH" | "CARD" | "CREDIT"
-    amountPaid, // number
-    notes,
-    createdAt,
-    saleDate,
-  } = data;
-
-  const transactionDate = createdAt || saleDate ? new Date(createdAt || saleDate) : new Date();
-
-  if (!items || !Array.isArray(items) || items.length === 0) {
-    throw new Error("Sale must contain at least one item");
+const resolveCustomer = async (tx, data) => {
+  if (data.customerId) {
+    const customer = await tx.customer.findUnique({ where: { id: data.customerId } });
+    if (!customer) throw badRequest("Selected customer was not found");
+    return customer.id;
   }
 
-  const payMethod = paymentMethod || "CASH";
+  const inlineName = data.newCustomer?.name || data.customerName;
+  if (!inlineName) return null;
 
-  return prisma.$transaction(
-    async (tx) => {
-      let finalCustomerId = customerId ? parseInt(customerId, 10) : null;
+  const phone = data.newCustomer?.phone || data.customerPhone || null;
+  const city = data.newCustomer?.city || data.customerCity;
+  const address = data.newCustomer?.address || data.customerAddress;
 
-      // Inline Auto-Registration of New Customer if details are provided
-      const inlineName = newCustomer?.name || customerName;
-      const inlinePhone = newCustomer?.phone || customerPhone;
-      const inlineCity = newCustomer?.city || customerCity;
-      const inlineAddress = newCustomer?.address || customerAddress;
+  if (phone) {
+    const existing = await tx.customer.findUnique({ where: { phone } });
+    if (existing) return existing.id;
+  }
 
-      if (!finalCustomerId && inlineName && inlineName.trim()) {
-        const cleanName = inlineName.trim();
-        const cleanPhone = inlinePhone ? inlinePhone.trim() : null;
+  const fullAddress = [address, city].filter(Boolean).join(", ");
+  const created = await tx.customer.create({
+    data: { name: inlineName, phone, address: fullAddress || null },
+  });
+  return created.id;
+};
 
-        let existingCust = null;
-        if (cleanPhone) {
-          existingCust = await tx.customer.findFirst({
-            where: { phone: cleanPhone },
-          });
-        }
+/**
+ * Creates a POS sale. Everything (stock, lots, khata, bill number) happens in one
+ * transaction with the product rows locked, so concurrent counters stay consistent.
+ *
+ * Line pricing: `unitPrice` (cashier's net rate) applies to the whole line. Without it,
+ * each FIFO lot is sold at its own selling price minus `discountPerUnit`.
+ */
+export const createSale = async (user, data) => {
+  const admin = isAdmin(user);
+  const requestedDate = data.createdAt || data.saleDate;
+  let transactionDate = new Date();
 
-        if (existingCust) {
-          finalCustomerId = existingCust.id;
-        } else {
-          const fullAddress = [inlineAddress, inlineCity].filter(Boolean).map((s) => s.trim()).join(", ");
-          const createdCust = await tx.customer.create({
-            data: {
-              name: cleanName,
-              phone: cleanPhone || null,
-              address: fullAddress || null,
-            },
-          });
-          finalCustomerId = createdCust.id;
-        }
+  if (requestedDate) {
+    const parsed = parseLocalDateTime(requestedDate);
+    if (!parsed || isNaN(parsed.getTime())) throw badRequest("Invalid sale date");
+    if (parsed.getTime() > Date.now() + 5 * 60 * 1000) throw badRequest("Sale date cannot be in the future");
+    const isBackdated = Math.abs(parsed.getTime() - Date.now()) > 5 * 60 * 1000;
+    if (isBackdated && !admin) throw forbidden("Only an admin can record a sale with a past date");
+    transactionDate = parsed;
+  }
+
+  const payMethod = data.paymentMethod || "CASH";
+
+  const saleId = await prisma.$transaction(async (tx) => {
+    const finalCustomerId = await resolveCustomer(tx, data);
+    if (payMethod === "CREDIT" && !finalCustomerId) {
+      throw badRequest("Customer name or selection is required for CREDIT (Khata) payment");
+    }
+
+    // 1. Lock and load products + their active lots
+    const productIds = [...new Set(data.items.map((i) => i.productId))];
+    await lockProducts(tx, productIds);
+
+    const products = await tx.product.findMany({ where: { id: { in: productIds } }, include: { unit: true } });
+    const productMap = new Map(products.map((p) => [p.id, p]));
+    const batches = await getActiveBatches(tx, productIds);
+
+    // 2. Validate stock per product (lines of the same product are summed)
+    const requestedByProduct = new Map();
+    for (const item of data.items) {
+      const product = productMap.get(item.productId);
+      if (!product || !product.isActive) throw badRequest(`Product ID ${item.productId} not found or inactive`);
+      assertQuantityAllowed(product, item.quantity);
+      requestedByProduct.set(product.id, round3((requestedByProduct.get(product.id) || 0) + item.quantity));
+    }
+
+    const unbatchedByProduct = new Map();
+    for (const [productId, qty] of requestedByProduct) {
+      const product = productMap.get(productId);
+      if (product.stockQuantity + QTY_EPSILON < qty) {
+        const avail = round3(Math.max(0, product.stockQuantity));
+        throw badRequest(
+          `Insufficient stock for "${product.name}". Available: ${avail} ${product.unit?.symbol || product.unit?.name || "pcs"}, requested: ${qty}`
+        );
       }
+      const batchTotal = batches.filter((b) => b.productId === productId).reduce((s, b) => s + b.remainingQuantity, 0);
+      unbatchedByProduct.set(productId, { value: Math.max(0, round3(product.stockQuantity - batchTotal)) });
+    }
 
-      if (payMethod === "CREDIT" && !finalCustomerId) {
-        throw new Error("Customer name or selection is required for CREDIT (Khata) payment");
-      }
-      // 1. Calculate line item subtotals and check stock
-      const roundMoney = (v) => Math.round((parseFloat(v) || 0) * 100) / 100;
-      let subtotal = 0;
-      const preparedItems = [];
+    // 3. Allocate each line to lots and price it
+    const preparedLines = [];
+    for (const item of data.items) {
+      const product = productMap.get(item.productId);
+      const allocations = planConsumption({
+        product,
+        batches,
+        quantity: item.quantity,
+        preferredBatchId: item.batchId || null,
+        unbatchedAvailable: unbatchedByProduct.get(product.id),
+      });
 
-      for (const item of items) {
-        const prodId = parseInt(item.productId, 10);
-        const qty = parseFloat(item.quantity);
-        const price = parseFloat(item.unitPrice);
+      for (const a of allocations) {
+        const listPrice = round2(a.sellingPrice);
+        const unitPrice =
+          item.unitPrice !== undefined
+            ? round2(item.unitPrice)
+            : round2(Math.max(0, listPrice - (item.discountPerUnit || 0)));
 
-        if (isNaN(qty) || qty <= 0) {
-          throw new Error(`Invalid quantity for product ID ${prodId}`);
-        }
-
-        const product = await tx.product.findUnique({
-          where: { id: prodId },
-          include: { unit: true },
-        });
-
-        if (!product || !product.isActive) {
-          throw new Error(`Product ID ${prodId} not found or inactive`);
-        }
-
-        if (product.stockQuantity <= 0 || product.stockQuantity < qty) {
-          const avail = Math.max(0, product.stockQuantity);
-          throw new Error(
-            `Insufficient stock for "${product.name}". Available: ${avail} ${product.unit?.symbol || product.unit?.name || "pcs"}, requested: ${qty}`
+        if (!admin && unitPrice + 0.0001 < a.costPrice) {
+          throw forbidden(
+            `"${product.name}" cannot be sold below its cost price. Ask an admin to approve this rate.`
           );
         }
 
-        const itemSubtotal = roundMoney(qty * price);
-        subtotal = roundMoney(subtotal + itemSubtotal);
-
-        preparedItems.push({
-          productId: prodId,
-          batchId: item.batchId ? parseInt(item.batchId, 10) : null,
-          quantity: qty,
-          unitPrice: price,
-          subtotal: itemSubtotal,
-          product,
+        preparedLines.push({
+          productId: product.id,
+          batchId: a.batchId,
+          quantity: a.quantity,
+          costPrice: round2(a.costPrice),
+          listPrice,
+          unitPrice,
+          subtotal: round2(a.quantity * unitPrice),
         });
       }
-
-      // 2. Calculate discounts
-      let discVal = parseFloat(discountValue || 0);
-      let discountAmount = 0;
-
-      if (discountType === "PERCENTAGE" && discVal > 0) {
-        discountAmount = roundMoney((subtotal * discVal) / 100);
-      } else if (discountType === "FLAT" && discVal > 0) {
-        discountAmount = roundMoney(Math.min(discVal, subtotal));
-      }
-
-      const totalAmount = roundMoney(Math.max(0, subtotal - discountAmount));
-
-      let amtPaid = parseFloat(amountPaid || 0);
-      if (payMethod === "CREDIT") {
-        amtPaid = 0; // Credit sale
-      }
-
-      const changeAmount = roundMoney(Math.max(0, amtPaid - totalAmount));
-
-      // 3. Generate Sale Number
-      const saleNumber = await generateSaleNumber();
-
-      // 4. Create Sale Record
-      const sale = await tx.sale.create({
-        data: {
-          saleNumber,
-          customerId: finalCustomerId,
-          userId,
-          subtotal,
-          discountType: discountType || null,
-          discountValue: discVal,
-          discountAmount,
-          totalAmount,
-          paymentMethod: payMethod,
-          amountPaid: amtPaid,
-          changeAmount,
-          status: "COMPLETED",
-          notes: notes || null,
-          createdAt: transactionDate,
-        },
-      });
-
-      // 5. Create SaleItems, Deduct Stock using FIFO, and Update Product Stock
-      for (const item of preparedItems) {
-        if (item.batchId) {
-          // Direct deduction from specified StockBatch
-          const batch = await tx.stockBatch.findUnique({
-            where: { id: item.batchId },
-          });
-
-          if (batch && batch.remainingQuantity > 0) {
-            const take = Math.min(batch.remainingQuantity, item.quantity);
-            const batchCost = batch.costPrice || item.product.costPrice || 0;
-
-            await tx.stockBatch.update({
-              where: { id: batch.id },
-              data: { remainingQuantity: batch.remainingQuantity - take },
-            });
-
-            await tx.saleItem.create({
-              data: {
-                saleId: sale.id,
-                productId: item.productId,
-                batchId: batch.id,
-                quantity: take,
-                costPrice: batchCost,
-                unitPrice: item.unitPrice,
-                subtotal: roundMoney(take * item.unitPrice),
-              },
-            });
-          } else {
-            await tx.saleItem.create({
-              data: {
-                saleId: sale.id,
-                productId: item.productId,
-                quantity: item.quantity,
-                costPrice: item.product.costPrice || 0,
-                unitPrice: item.unitPrice,
-                subtotal: roundMoney(item.subtotal),
-              },
-            });
-          }
-        } else {
-          // Deduct quantity from oldest active stock batches (FIFO) & record exact batch sale items
-          const batches = await tx.stockBatch.findMany({
-            where: {
-              productId: item.productId,
-              remainingQuantity: { gt: 0 },
-            },
-            orderBy: { createdAt: "asc" },
-          });
-
-          let remainingToDeduct = item.quantity;
-
-          if (batches.length > 0) {
-            for (const batch of batches) {
-              if (remainingToDeduct <= 0) break;
-
-              const takeFromThisBatch = Math.min(batch.remainingQuantity, remainingToDeduct);
-              const batchCost = batch.costPrice || item.product.costPrice || 0;
-              const batchSelling = batch.sellingPrice > 0 ? batch.sellingPrice : item.unitPrice;
-
-              await tx.stockBatch.update({
-                where: { id: batch.id },
-                data: {
-                  remainingQuantity: batch.remainingQuantity - takeFromThisBatch,
-                },
-              });
-
-              await tx.saleItem.create({
-                data: {
-                  saleId: sale.id,
-                  productId: item.productId,
-                  batchId: batch.id,
-                  quantity: takeFromThisBatch,
-                  costPrice: batchCost,
-                  unitPrice: batchSelling,
-                  subtotal: roundMoney(takeFromThisBatch * batchSelling),
-                },
-              });
-
-              remainingToDeduct -= takeFromThisBatch;
-            }
-          }
-
-          if (remainingToDeduct > 0) {
-            await tx.saleItem.create({
-              data: {
-                saleId: sale.id,
-                productId: item.productId,
-                quantity: remainingToDeduct,
-                costPrice: item.product.costPrice || 0,
-                unitPrice: item.unitPrice,
-                subtotal: roundMoney(remainingToDeduct * item.unitPrice),
-              },
-            });
-          }
-        }
-
-        // Sync product main stockQuantity with active batch total
-        const batchSum = await tx.stockBatch.aggregate({
-          where: { productId: item.productId },
-          _sum: { remainingQuantity: true },
-        });
-        const currentStock = batchSum._sum.remainingQuantity ?? 0;
-
-        const updatedProduct = await tx.product.update({
-          where: { id: item.productId },
-          data: { stockQuantity: currentStock },
-        });
-
-        // Check low stock alert trigger
-        if (currentStock <= updatedProduct.lowStockAlert) {
-          await tx.notification.create({
-            data: {
-              type: "LOW_STOCK",
-              title: `Low Stock Alert: ${item.product.name}`,
-              message: `Current stock of ${item.product.name} is ${currentStock} ${item.product.unit?.symbol || item.product.unit?.name || "pcs"}. Low stock threshold is ${updatedProduct.lowStockAlert}.`,
-              metadata: {
-                productId: item.productId,
-                currentStock,
-                threshold: updatedProduct.lowStockAlert,
-              },
-            },
-          });
-        }
-      }
-
-      // 6. Update Customer Khata balance if CREDIT sale
-      if (payMethod === "CREDIT" && finalCustomerId) {
-        const customer = await tx.customer.findUnique({ where: { id: finalCustomerId } });
-        if (customer) {
-          await tx.customer.update({
-            where: { id: finalCustomerId },
-            data: {
-              outstandingBalance: customer.outstandingBalance + totalAmount,
-            },
-          });
-        }
-      }
-
-      // 7. Fetch full sale with relations to generate Receipt
-      const fullSale = await tx.sale.findUnique({
-        where: { id: sale.id },
-        include: {
-          customer: true,
-          user: { select: { id: true, name: true } },
-          saleItems: {
-            include: {
-              product: { include: { unit: true } },
-            },
-          },
-        },
-      });
-
-      const receiptHtml = generateReceiptHtml(fullSale);
-
-      await tx.receipt.create({
-        data: {
-          saleId: sale.id,
-          receiptHtml,
-        },
-      });
-
-      return tx.sale.findUnique({
-        where: { id: sale.id },
-        include: {
-          customer: true,
-          user: { select: { id: true, name: true } },
-          saleItems: {
-            include: { product: { include: { unit: true } } },
-          },
-          receipt: true,
-        },
-      });
-    },
-    {
-      maxWait: 10000,
-      timeout: 30000,
     }
-  );
+
+    // 4. Totals & bill discount
+    const subtotal = round2(preparedLines.reduce((s, l) => s + l.subtotal, 0));
+    const discVal = round2(data.discountValue || 0);
+    let discountAmount = 0;
+    if (data.discountType === "PERCENTAGE" && discVal > 0) {
+      discountAmount = round2((subtotal * Math.min(discVal, 100)) / 100);
+    } else if (data.discountType === "FLAT" && discVal > 0) {
+      if (discVal > subtotal) throw badRequest("Flat discount cannot be more than the bill subtotal");
+      discountAmount = discVal;
+    }
+    const totalAmount = round2(Math.max(0, subtotal - discountAmount));
+
+    // 5. Payment rules
+    let amountPaid = 0;
+    let changeAmount = 0;
+    let creditAmount = 0;
+
+    if (payMethod === "CASH") {
+      amountPaid = data.amountPaid !== undefined ? round2(data.amountPaid) : totalAmount;
+      if (amountPaid + 0.001 < totalAmount) {
+        throw badRequest(`Cash received (PKR ${amountPaid}) is less than the bill total (PKR ${totalAmount})`);
+      }
+      changeAmount = round2(amountPaid - totalAmount);
+    } else if (payMethod === "CARD") {
+      amountPaid = totalAmount;
+    } else {
+      amountPaid = round2(data.amountPaid || 0);
+      if (amountPaid > totalAmount + 0.001) {
+        throw badRequest("Advance paid on a khata sale cannot be more than the bill total");
+      }
+      creditAmount = round2(totalAmount - amountPaid);
+    }
+
+    // 6. Create sale + items
+    const saleNumber = await generateSaleNumber(tx, transactionDate);
+    const sale = await tx.sale.create({
+      data: {
+        saleNumber,
+        customerId: finalCustomerId,
+        userId: user.id,
+        subtotal,
+        discountType: discountAmount > 0 ? data.discountType : null,
+        discountValue: discountAmount > 0 ? discVal : 0,
+        discountAmount,
+        totalAmount,
+        paymentMethod: payMethod,
+        amountPaid,
+        changeAmount,
+        creditAmount,
+        status: "COMPLETED",
+        notes: data.notes || null,
+        createdAt: transactionDate,
+      },
+    });
+
+    await tx.saleItem.createMany({
+      data: preparedLines.map((l) => ({ ...l, saleId: sale.id, createdAt: transactionDate })),
+    });
+
+    // 7. Deduct lots and product stock
+    await applyBatchDeductions(tx, preparedLines);
+    for (const [productId, qty] of requestedByProduct) {
+      const product = productMap.get(productId);
+      const after = round3(Math.max(0, product.stockQuantity - qty));
+      await tx.product.update({ where: { id: productId }, data: { stockQuantity: after } });
+      await notifyLowStockIfCrossed(tx, product, product.stockQuantity, after);
+    }
+
+    // 8. Khata ledger
+    if (creditAmount > 0) {
+      await postKhataEntry(tx, {
+        customerId: finalCustomerId,
+        type: "SALE",
+        amount: creditAmount,
+        method: "CREDIT",
+        saleId: sale.id,
+        notes: `Bill ${saleNumber}${amountPaid > 0 ? ` (advance paid PKR ${amountPaid})` : ""}`,
+        userId: user.id,
+      });
+    }
+
+    await tx.receipt.create({ data: { saleId: sale.id } });
+
+    if (requestedDate && Math.abs(transactionDate.getTime() - Date.now()) > 5 * 60 * 1000) {
+      await audit(tx, user, "SALE_BACKDATED", "Sale", sale.id, { saleNumber, date: transactionDate });
+    }
+
+    return sale.id;
+  }, TX_OPTIONS);
+
+  const full = await prisma.sale.findUnique({ where: { id: saleId }, include: saleDetailInclude });
+  return withReceipt(full);
 };
 
-export const updateSaleStatus = async (id, status) => {
-  const saleId = parseInt(id, 10);
-  return prisma.sale.update({
-    where: { id: saleId },
-    data: { status },
-  });
+/**
+ * Voids a completed sale (admin): stock goes back to its lots, khata is reversed,
+ * and the bill stays in history marked VOIDED. Sales with returns must have them removed first.
+ */
+export const voidSale = async (user, id, reason) => {
+  await prisma.$transaction(async (tx) => {
+    const sale = await tx.sale.findUnique({
+      where: { id },
+      include: { saleItems: true, returns: { select: { id: true } } },
+    });
+    if (!sale) throw notFound("Sale not found");
+    if (sale.status === "VOIDED") throw badRequest("This sale is already voided");
+    if (sale.returns.length > 0) {
+      throw badRequest("This sale has returns. Delete its returns first, then void the sale.");
+    }
+
+    await lockProducts(tx, sale.saleItems.map((i) => i.productId));
+    for (const item of sale.saleItems) {
+      await restoreStock(tx, {
+        productId: item.productId,
+        batchId: item.batchId,
+        quantity: item.quantity,
+        costPrice: item.costPrice,
+        sellingPrice: item.listPrice || item.unitPrice,
+      });
+    }
+
+    // Bills created before creditAmount existed stored the whole unpaid total as khata.
+    const khataPortion =
+      sale.creditAmount > 0
+        ? sale.creditAmount
+        : sale.paymentMethod === "CREDIT"
+        ? round2(Math.max(0, sale.totalAmount - (sale.amountPaid || 0)))
+        : 0;
+
+    if (sale.customerId && khataPortion > 0) {
+      await postKhataEntry(tx, {
+        customerId: sale.customerId,
+        type: "VOID",
+        amount: -khataPortion,
+        saleId: sale.id,
+        notes: `Bill ${sale.saleNumber} voided`,
+        userId: user.id,
+      });
+    }
+
+    await tx.sale.update({
+      where: { id },
+      data: { status: "VOIDED", voidedAt: new Date(), voidedById: user.id, voidReason: reason },
+    });
+
+    await audit(tx, user, "SALE_VOIDED", "Sale", id, { saleNumber: sale.saleNumber, totalAmount: sale.totalAmount, reason });
+  }, TX_OPTIONS);
+
+  return getSaleById(String(id));
 };

@@ -1,60 +1,43 @@
 import * as customerService from "../services/customerService.js";
-import { sendSuccess, sendError } from "../utils/responseUtil.js";
+import { sendSuccess } from "../utils/responseUtil.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
-export const getCustomers = async (req, res) => {
-  try {
-    const customers = await customerService.getAllCustomers(req.query.search);
-    return sendSuccess(res, "Customers retrieved successfully", customers);
-  } catch (error) {
-    return sendError(res, error.message, 500);
-  }
-};
+export const getCustomers = asyncHandler(async (req, res) => {
+  const customers = await customerService.getAllCustomers(req.query);
+  return sendSuccess(res, "Customers retrieved successfully", customers);
+});
 
-export const getCustomer = async (req, res) => {
-  try {
-    const customer = await customerService.getCustomerById(req.params.id);
-    return sendSuccess(res, "Customer details retrieved", customer);
-  } catch (error) {
-    return sendError(res, error.message, 404);
-  }
-};
+export const getCustomer = asyncHandler(async (req, res) => {
+  const customer = await customerService.getCustomerById(req.params.id);
+  return sendSuccess(res, "Customer details retrieved", customer);
+});
 
-export const createCustomer = async (req, res) => {
-  try {
-    const { name } = req.body;
-    if (!name) return sendError(res, "Customer name is required", 400);
-    const customer = await customerService.createCustomer(req.body);
-    return sendSuccess(res, "Customer created successfully", customer, 201);
-  } catch (error) {
-    return sendError(res, error.message, 400);
-  }
-};
+export const getLedger = asyncHandler(async (req, res) => {
+  const ledger = await customerService.getCustomerLedger(req.params.id, req.query);
+  return sendSuccess(res, "Khata statement retrieved", ledger);
+});
 
-export const updateCustomer = async (req, res) => {
-  try {
-    const customer = await customerService.updateCustomer(req.params.id, req.body);
-    return sendSuccess(res, "Customer updated successfully", customer);
-  } catch (error) {
-    return sendError(res, error.message, 400);
-  }
-};
+export const createCustomer = asyncHandler(async (req, res) => {
+  const customer = await customerService.createCustomer(req.user, req.body);
+  return sendSuccess(res, "Customer created successfully", customer, 201);
+});
 
-export const deleteCustomer = async (req, res) => {
-  try {
-    await customerService.deleteCustomer(req.params.id);
-    return sendSuccess(res, "Customer deleted successfully");
-  } catch (error) {
-    return sendError(res, error.message, 400);
-  }
-};
+export const updateCustomer = asyncHandler(async (req, res) => {
+  const customer = await customerService.updateCustomer(req.user, req.params.id, req.body);
+  return sendSuccess(res, "Customer updated successfully", customer);
+});
 
-export const settleBalance = async (req, res) => {
-  try {
-    const { amount, notes } = req.body;
-    if (!amount) return sendError(res, "Payment amount is required", 400);
-    const customer = await customerService.settleCustomerBalance(req.params.id, { amount, notes });
-    return sendSuccess(res, "Customer balance payment recorded successfully", customer);
-  } catch (error) {
-    return sendError(res, error.message, 400);
-  }
-};
+export const deleteCustomer = asyncHandler(async (req, res) => {
+  await customerService.deleteCustomer(req.user, req.params.id);
+  return sendSuccess(res, "Customer deleted successfully");
+});
+
+export const settleBalance = asyncHandler(async (req, res) => {
+  const customer = await customerService.settleCustomerBalance(req.user, req.params.id, req.body);
+  return sendSuccess(res, "Customer balance payment recorded successfully", customer);
+});
+
+export const adjustBalance = asyncHandler(async (req, res) => {
+  const customer = await customerService.adjustCustomerBalance(req.user, req.params.id, req.body);
+  return sendSuccess(res, "Khata balance adjusted", customer);
+});

@@ -9,10 +9,12 @@ import { Input } from "../../../components/common/input.jsx";
 import { Plus, Edit2, Trash2, Layers } from "lucide-react";
 import { showToastSuccess, showToastError, confirmDelete } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
+import { useAuth } from "../../../context/authContext.jsx";
 import { DataTable } from "../../../components/common/dataTable.jsx";
 import { Loader } from "../../../components/common/loader.jsx";
 
 export default function CategoriesPage() {
+  const { isAdmin } = useAuth();
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -96,9 +98,11 @@ export default function CategoriesPage() {
         title="Fabric Categories"
         description="Classify your fabrics (Lawn, Cotton, Silk, Chiffon, Linen, Velvet, etc.)."
         action={
+          isAdmin && (
           <Button onClick={() => handleOpenModal()} className="flex items-center gap-2 font-bold cursor-pointer">
             <Plus className="w-4 h-4" /> Add New Category
           </Button>
+          )
         }
       />
 
@@ -129,7 +133,7 @@ export default function CategoriesPage() {
                 label: "Actions",
                 sortable: false,
                 cellClassName: "text-right",
-                render: (c) => (
+                render: (c) => !isAdmin ? null : (
                   <div className="flex items-center justify-end gap-1">
                     <button
                       onClick={() => handleOpenModal(c)}
@@ -160,7 +164,7 @@ export default function CategoriesPage() {
               showToastSuccess(`Deleted ${ids.length} category(ies)!`);
               fetchCategories();
             }}
-            enableSelection={true}
+            enableSelection={isAdmin}
             enableDateFilter={false}
           />
         )}

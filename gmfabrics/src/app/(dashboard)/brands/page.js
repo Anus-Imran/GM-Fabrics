@@ -9,9 +9,11 @@ import { Input } from "../../../components/common/input.jsx";
 import { Plus, Edit2, Trash2, Tag } from "lucide-react";
 import { showToastSuccess, showToastError, confirmDelete } from "../../../utils/alerts.js";
 import api from "../../../services/apiService.js";
+import { useAuth } from "../../../context/authContext.jsx";
 import { Loader } from "../../../components/common/loader.jsx";
 
 export default function BrandsPage() {
+  const { isAdmin } = useAuth();
   const [brands, setBrands] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -90,9 +92,11 @@ export default function BrandsPage() {
         title="Fabric Brands & Labels"
         description="Manage manufacturer brands (Gul Ahmed, Bonanza, Al-Karam, Sapphire, Khaadi, J., etc.)."
         action={
+          isAdmin && (
           <Button onClick={() => handleOpenModal()} className="flex items-center gap-2 font-bold">
             <Plus className="w-4 h-4" /> Add New Brand
           </Button>
+          )
         }
       />
 
@@ -121,6 +125,7 @@ export default function BrandsPage() {
                     {b._count?.products || 0} products
                   </td>
                   <td className="py-3 px-3 text-right">
+                    {isAdmin && (
                     <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => handleOpenModal(b)}
@@ -135,6 +140,7 @@ export default function BrandsPage() {
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
+                    )}
                   </td>
                 </tr>
               ))}

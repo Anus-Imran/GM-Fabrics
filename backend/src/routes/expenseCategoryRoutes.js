@@ -1,15 +1,12 @@
-import express from "express";
-import * as expenseController from "../controllers/expenseController.js";
-import { authenticateUser } from "../middleware/authMiddleware.js";
-import { requireAdmin } from "../middleware/adminMiddleware.js";
+import * as expenseService from "../services/expenseService.js";
+import { buildMasterDataRouter } from "./masterDataRouter.js";
+import { nameBody } from "../validation/schemas.js";
 
-const router = express.Router();
-
-router.use(authenticateUser);
-
-router.get("/", expenseController.getExpenseCategories);
-router.post("/", requireAdmin, expenseController.createExpenseCategory);
-router.put("/:id", requireAdmin, expenseController.updateExpenseCategory);
-router.delete("/:id", requireAdmin, expenseController.deleteExpenseCategory);
-
-export default router;
+export default buildMasterDataRouter({
+  label: "Expense categories",
+  bodySchema: nameBody,
+  list: () => expenseService.getAllExpenseCategories(),
+  create: (body) => expenseService.createExpenseCategory(body.name),
+  update: (id, body) => expenseService.updateExpenseCategory(id, body.name),
+  remove: (id) => expenseService.deleteExpenseCategory(id),
+});

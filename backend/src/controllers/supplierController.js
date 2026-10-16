@@ -1,58 +1,48 @@
 import * as supplierService from "../services/supplierService.js";
-import { sendSuccess, sendError } from "../utils/responseUtil.js";
+import { sendSuccess } from "../utils/responseUtil.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
-export const getSuppliers = async (req, res) => {
-  try {
-    const suppliers = await supplierService.getAllSuppliers();
-    return sendSuccess(res, "Suppliers retrieved successfully", suppliers);
-  } catch (error) {
-    return sendError(res, error.message, 500);
-  }
-};
+export const getSuppliers = asyncHandler(async (req, res) => {
+  const suppliers = await supplierService.getAllSuppliers();
+  return sendSuccess(res, "Suppliers retrieved successfully", suppliers);
+});
 
-export const getSupplier = async (req, res) => {
-  try {
-    const supplier = await supplierService.getSupplierById(req.params.id);
-    return sendSuccess(res, "Supplier details retrieved", supplier);
-  } catch (error) {
-    return sendError(res, error.message, 404);
-  }
-};
+export const getSupplier = asyncHandler(async (req, res) => {
+  const supplier = await supplierService.getSupplierById(req.params.id);
+  return sendSuccess(res, "Supplier details retrieved", supplier);
+});
 
-export const createSupplier = async (req, res) => {
-  try {
-    const { name } = req.body;
-    if (!name) return sendError(res, "Supplier name is required", 400);
-    const supplier = await supplierService.createSupplier(req.body);
-    return sendSuccess(res, "Supplier created successfully", supplier, 201);
-  } catch (error) {
-    return sendError(res, error.message, 400);
-  }
-};
+export const getSupplierStockHistory = asyncHandler(async (req, res) => {
+  const history = await supplierService.getSupplierStockHistory(req.params.id);
+  return sendSuccess(res, "Supplier stock history retrieved", history);
+});
 
-export const updateSupplier = async (req, res) => {
-  try {
-    const supplier = await supplierService.updateSupplier(req.params.id, req.body);
-    return sendSuccess(res, "Supplier updated successfully", supplier);
-  } catch (error) {
-    return sendError(res, error.message, 400);
-  }
-};
+export const getSupplierLedger = asyncHandler(async (req, res) => {
+  const ledger = await supplierService.getSupplierLedger(req.params.id);
+  return sendSuccess(res, "Supplier statement retrieved", ledger);
+});
 
-export const deleteSupplier = async (req, res) => {
-  try {
-    await supplierService.deleteSupplier(req.params.id);
-    return sendSuccess(res, "Supplier deleted successfully");
-  } catch (error) {
-    return sendError(res, error.message, 400);
-  }
-};
+export const createSupplier = asyncHandler(async (req, res) => {
+  const supplier = await supplierService.createSupplier(req.user, req.body);
+  return sendSuccess(res, "Supplier created successfully", supplier, 201);
+});
 
-export const getSupplierStockHistory = async (req, res) => {
-  try {
-    const history = await supplierService.getSupplierStockHistory(req.params.id);
-    return sendSuccess(res, "Supplier stock history retrieved", history);
-  } catch (error) {
-    return sendError(res, error.message, 404);
-  }
-};
+export const updateSupplier = asyncHandler(async (req, res) => {
+  const supplier = await supplierService.updateSupplier(req.user, req.params.id, req.body);
+  return sendSuccess(res, "Supplier updated successfully", supplier);
+});
+
+export const deleteSupplier = asyncHandler(async (req, res) => {
+  await supplierService.deleteSupplier(req.user, req.params.id);
+  return sendSuccess(res, "Supplier deleted successfully");
+});
+
+export const recordPayment = asyncHandler(async (req, res) => {
+  const payment = await supplierService.recordSupplierPayment(req.user, req.params.id, req.body);
+  return sendSuccess(res, "Supplier payment recorded", payment, 201);
+});
+
+export const deletePayment = asyncHandler(async (req, res) => {
+  const result = await supplierService.deleteSupplierPayment(req.user, req.params.id, req.params.paymentId);
+  return sendSuccess(res, "Supplier payment deleted", result);
+});

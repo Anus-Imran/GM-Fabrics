@@ -1,39 +1,67 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
-import api from "../services/apiService.js";
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import api, { TOKEN_KEY, USER_KEY } from "../services/apiService.js";
 
 const AuthContext = createContext();
+
+const readStorage = (key) => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+const writeStorage = (key, value) => {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    // ignore (private mode / blocked storage)
+  }
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const logout = useCallback(() => {
+    setUser(null);
+    setToken(null);
+    writeStorage(TOKEN_KEY, null);
+    writeStorage(USER_KEY, null);
+    window.location.href = "/login";
+  }, []);
+
   useEffect(() => {
-    const savedToken = localStorage.getItem("gmfabrics_token");
-    const savedUser = localStorage.getItem("gmfabrics_user");
+    const savedToken = readStorage(TOKEN_KEY);
+    const savedUser = readStorage(USER_KEY);
 
     if (savedToken && savedUser) {
       setToken(savedToken);
-      setUser(JSON.parse(savedUser));
-      // Refresh user status
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch {
+        writeStorage(USER_KEY, null);
+      }
+      // Refresh role / name from the server (role changes take effect immediately).
       api
         .get("/auth/me")
         .then((res) => {
           if (res.data) {
             setUser(res.data);
-            localStorage.setItem("gmfabrics_user", JSON.stringify(res.data));
+            writeStorage(USER_KEY, JSON.stringify(res.data));
           }
         })
-        .catch(() => {
-          logout();
+        .catch((err) => {
+          if (err.status === 401) logout();
         })
         .finally(() => setLoading(false));
     } else {
       setLoading(false);
     }
-  }, []);
+  }, [logout]);
 
   const login = async (email, password) => {
     const res = await api.post("/auth/login", { email, password });
@@ -41,22 +69,23 @@ export const AuthProvider = ({ children }) => {
       const { user: userData, token: userToken } = res.data;
       setUser(userData);
       setToken(userToken);
-      localStorage.setItem("gmfabrics_token", userToken);
-      localStorage.setItem("gmfabrics_user", JSON.stringify(userData));
+      writeStorage(TOKEN_KEY, userToken);
+      writeStorage(USER_KEY, JSON.stringify(userData));
       return userData;
     }
+    throw new Error(res.message || "Login failed");
   };
 
-  const logout = () => {
-    setUser(null);
-    setToken(null);
-    localStorage.removeItem("gmfabrics_token");
-    localStorage.removeItem("gmfabrics_user");
-    window.location.href = "/login";
+  // Used after a password change: the server issues a new token.
+  const replaceToken = (newToken) => {
+    setToken(newToken);
+    writeStorage(TOKEN_KEY, newToken);
   };
+
+  const isAdmin = user?.role === "ADMIN";
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, login, logout, replaceToken, isAdmin }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,15 +1,12 @@
-import express from "express";
-import * as categoryController from "../controllers/categoryController.js";
-import { authenticateUser } from "../middleware/authMiddleware.js";
-import { requireAdmin } from "../middleware/adminMiddleware.js";
+import * as categoryService from "../services/categoryService.js";
+import { buildMasterDataRouter } from "./masterDataRouter.js";
+import { nameBody } from "../validation/schemas.js";
 
-const router = express.Router();
-
-router.use(authenticateUser);
-
-router.get("/", categoryController.getCategories);
-router.post("/", requireAdmin, categoryController.createCategory);
-router.put("/:id", requireAdmin, categoryController.updateCategory);
-router.delete("/:id", requireAdmin, categoryController.deleteCategory);
-
-export default router;
+export default buildMasterDataRouter({
+  label: "Categories",
+  bodySchema: nameBody,
+  list: () => categoryService.getAllCategories(),
+  create: (body) => categoryService.createCategory(body),
+  update: (id, body) => categoryService.updateCategory(id, body),
+  remove: (id) => categoryService.deleteCategory(id),
+});

@@ -1,11 +1,42 @@
 import { prisma } from "../config/prisma.js";
+import { badRequest, notFound } from "../utils/appError.js";
+import { round2, round3, QTY_EPSILON } from "../utils/money.js";
+import { parseLocalDateTime } from "../utils/time.js";
+import { audit } from "../utils/audit.js";
+import { isAdmin } from "../middleware/adminMiddleware.js";
+import { applyAdjustment } from "./stockAdjustmentService.js";
 
-export const getAllProducts = async (filters = {}) => {
+const TX_OPTIONS = { maxWait: 10000, timeout: 30000 };
+
+const activeBatchesSelect = (admin) => ({
+  where: { remainingQuantity: { gt: QTY_EPSILON } },
+  orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  select: {
+    id: true,
+    productId: true,
+    remainingQuantity: true,
+    initialQuantity: true,
+    sellingPrice: true,
+    createdAt: true,
+    stockEntryId: true,
+    ...(admin ? { costPrice: true } : {}),
+  },
+});
+
+// Cashiers never receive purchase cost data.
+const stripCost = (product, admin) => {
+  if (admin || !product) return product;
+  const { costPrice, ...rest } = product;
+  return rest;
+};
+
+export const getAllProducts = async (filters = {}, user) => {
+  const admin = isAdmin(user);
   const where = { isActive: true };
 
-  if (filters.categoryId) where.categoryId = parseInt(filters.categoryId, 10);
-  if (filters.brandId) where.brandId = parseInt(filters.brandId, 10);
-  if (filters.unitId) where.unitId = parseInt(filters.unitId, 10);
+  if (filters.categoryId) where.categoryId = filters.categoryId;
+  if (filters.brandId) where.brandId = filters.brandId;
+  if (filters.unitId) where.unitId = filters.unitId;
   if (filters.search) {
     where.OR = [
       { name: { contains: filters.search, mode: "insensitive" } },
@@ -14,317 +45,246 @@ export const getAllProducts = async (filters = {}) => {
     ];
   }
   if (filters.lowStock === "true") {
-    // Return products where stockQuantity <= lowStockAlert
     where.stockQuantity = { lte: prisma.product.fields.lowStockAlert };
   }
 
-  return prisma.product.findMany({
+  // POS view: only what the counter needs (smaller payload, faster query).
+  if (filters.view === "pos") {
+    const products = await prisma.product.findMany({
+      where,
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        barcode: true,
+        categoryId: true,
+        salePrice: true,
+        costPrice: admin,
+        stockQuantity: true,
+        lowStockAlert: true,
+        isActive: true,
+        category: { select: { id: true, name: true } },
+        brand: { select: { id: true, name: true } },
+        unit: { select: { id: true, name: true, symbol: true, allowDecimal: true } },
+        stockBatches: activeBatchesSelect(admin),
+      },
+      orderBy: { name: "asc" },
+    });
+    return admin ? products : products.map((p) => stripCost(p, admin));
+  }
+
+  const products = await prisma.product.findMany({
     where,
     include: {
       category: true,
       brand: true,
       unit: true,
-      supplier: true,
-      stockBatches: {
-        where: { remainingQuantity: { gt: 0 } },
-        orderBy: { createdAt: "asc" },
-      },
+      supplier: { select: { id: true, name: true } },
+      stockBatches: activeBatchesSelect(admin),
     },
     orderBy: { name: "asc" },
   });
+  return products.map((p) => stripCost(p, admin));
 };
 
 export const getLowStockProducts = async () => {
-  // Execute query using raw condition or filter
-  const products = await prisma.product.findMany({
-    where: { isActive: true },
-    include: { category: true, brand: true, unit: true, supplier: true },
+  return prisma.product.findMany({
+    where: { isActive: true, stockQuantity: { lte: prisma.product.fields.lowStockAlert } },
+    include: { category: true, brand: true, unit: true, supplier: { select: { id: true, name: true } } },
+    orderBy: { stockQuantity: "asc" },
   });
-
-  return products.filter((p) => p.stockQuantity <= p.lowStockAlert);
 };
 
-export const getProductById = async (id) => {
-  const productId = parseInt(id, 10);
+export const getProductById = async (id, user) => {
+  const admin = isAdmin(user);
   const product = await prisma.product.findUnique({
-    where: { id: productId },
+    where: { id },
     include: {
       category: true,
       brand: true,
       unit: true,
       supplier: true,
-      stockEntries: {
-        take: 10,
-        orderBy: { purchasedAt: "desc" },
-        include: { supplier: true },
-      },
-      stockBatches: {
-        orderBy: { createdAt: "desc" },
-      },
+      stockEntries: admin
+        ? { take: 10, orderBy: { purchasedAt: "desc" }, include: { supplier: true } }
+        : false,
+      stockBatches: activeBatchesSelect(admin),
     },
   });
-  if (!product) throw new Error("Product not found");
-  return product;
+  if (!product) throw notFound("Product not found");
+  return stripCost(product, admin);
 };
 
-export const searchProducts = async (query) => {
-  if (!query) return [];
-  return prisma.product.findMany({
+/** Exact barcode / SKU lookup for scanners. */
+export const findByCode = async (code, user) => {
+  const admin = isAdmin(user);
+  const term = String(code || "").trim();
+  if (!term) return null;
+  return prisma.product
+    .findFirst({
+      where: { isActive: true, OR: [{ barcode: term }, { sku: { equals: term, mode: "insensitive" } }] },
+      include: { category: true, brand: true, unit: true, stockBatches: activeBatchesSelect(admin) },
+    })
+    .then((p) => stripCost(p, admin));
+};
+
+export const searchProducts = async (query, user) => {
+  const admin = isAdmin(user);
+  const term = String(query || "").trim();
+  if (!term) return [];
+
+  // Exact code match wins (barcode scanners), otherwise fall back to name search.
+  const exact = await findByCode(term, user);
+  if (exact) return [exact];
+
+  const products = await prisma.product.findMany({
     where: {
       isActive: true,
       OR: [
-        { name: { contains: query, mode: "insensitive" } },
-        { barcode: { equals: query } },
-        { sku: { equals: query } },
+        { name: { contains: term, mode: "insensitive" } },
+        { sku: { contains: term, mode: "insensitive" } },
+        { barcode: { contains: term } },
       ],
     },
-    include: {
-      category: true,
-      brand: true,
-      unit: true,
-      stockBatches: {
-        where: { remainingQuantity: { gt: 0 } },
-        orderBy: { createdAt: "asc" },
-      },
-    },
+    include: { category: true, brand: true, unit: true, stockBatches: activeBatchesSelect(admin) },
+    orderBy: { name: "asc" },
     take: 20,
   });
+  return products.map((p) => stripCost(p, admin));
 };
 
-export const createProduct = async (data) => {
-  const {
-    name,
-    sku,
-    barcode,
-    description,
-    categoryId,
-    brandId,
-    unitId,
-    supplierId,
-    costPrice,
-    salePrice,
-    stockQuantity,
-    lowStockAlert,
-  } = data;
-
+const assertUniqueCodes = async (tx, { sku, barcode }, excludeId = null) => {
   if (sku) {
-    const existingSku = await prisma.product.findUnique({ where: { sku } });
-    if (existingSku) throw new Error("SKU already exists");
+    const existing = await tx.product.findFirst({ where: { sku, ...(excludeId ? { id: { not: excludeId } } : {}) } });
+    if (existing) throw badRequest(`SKU "${sku}" is already used by "${existing.name}"${existing.isActive ? "" : " (deleted product)"}`);
   }
-
   if (barcode) {
-    const existingBarcode = await prisma.product.findUnique({ where: { barcode } });
-    if (existingBarcode) throw new Error("Barcode already exists");
+    const existing = await tx.product.findFirst({ where: { barcode, ...(excludeId ? { id: { not: excludeId } } : {}) } });
+    if (existing) throw badRequest(`Barcode "${barcode}" is already used by "${existing.name}"${existing.isActive ? "" : " (deleted product)"}`);
   }
+};
 
-  const initialStock = parseFloat(stockQuantity || 0);
-  const cost = parseFloat(costPrice || 0);
-  const selling = parseFloat(salePrice || 0);
+export const createProduct = async (user, data) => {
+  const initialStock = round3(data.stockQuantity || 0);
+  const cost = round2(data.costPrice || 0);
+  const selling = round2(data.salePrice || 0);
+  const recordDate = parseLocalDateTime(data.createdAt || data.entryDate) || new Date();
 
-  const recordDate = data.createdAt || data.entryDate ? new Date(data.createdAt || data.entryDate) : new Date();
+  const productId = await prisma.$transaction(async (tx) => {
+    await assertUniqueCodes(tx, data);
 
-  return prisma.$transaction(async (tx) => {
+    const unit = await tx.unit.findUnique({ where: { id: data.unitId } });
+    if (!unit) throw badRequest("Selected unit was not found");
+    if (!unit.allowDecimal && Math.abs(initialStock - Math.round(initialStock)) > QTY_EPSILON) {
+      throw badRequest(`Opening stock must be a whole number for unit "${unit.name}"`);
+    }
+
     const product = await tx.product.create({
       data: {
-        name,
-        sku: sku || null,
-        barcode: barcode || null,
-        description: description || null,
-        categoryId: parseInt(categoryId, 10),
-        brandId: brandId ? parseInt(brandId, 10) : null,
-        unitId: parseInt(unitId, 10),
-        supplierId: supplierId ? parseInt(supplierId, 10) : null,
+        name: data.name,
+        sku: data.sku || null,
+        barcode: data.barcode || null,
+        description: data.description || null,
+        categoryId: data.categoryId,
+        brandId: data.brandId || null,
+        unitId: data.unitId,
+        supplierId: data.supplierId || null,
         costPrice: cost,
         salePrice: selling,
-        stockQuantity: initialStock,
-        lowStockAlert: parseFloat(lowStockAlert || 10),
+        stockQuantity: 0,
+        lowStockAlert: round3(data.lowStockAlert ?? 10),
         createdAt: recordDate,
-      },
-      include: {
-        category: true,
-        brand: true,
-        unit: true,
-        supplier: true,
-        stockBatches: true,
       },
     });
 
     if (initialStock > 0) {
-      await tx.stockBatch.create({
-        data: {
-          productId: product.id,
-          initialQuantity: initialStock,
-          remainingQuantity: initialStock,
-          costPrice: cost,
-          sellingPrice: selling,
-          createdAt: recordDate,
-        },
+      await applyAdjustment(tx, user, {
+        productId: product.id,
+        quantity: initialStock,
+        reason: "OPENING",
+        notes: "Opening stock when product was created",
+        costPrice: cost,
       });
     }
 
-    return product;
-  });
+    await audit(tx, user, "PRODUCT_CREATED", "Product", product.id, { name: product.name, costPrice: cost, salePrice: selling, initialStock });
+    return product.id;
+  }, TX_OPTIONS);
+
+  return getProductById(productId, user);
 };
 
-export const updateProduct = async (id, data) => {
-  const productId = parseInt(id, 10);
-  const updateData = {};
+/**
+ * Updates product details. A stock change is never written directly: it becomes a
+ * StockAdjustment (count correction by default) so every unit is accounted for.
+ */
+export const updateProduct = async (user, id, data) => {
+  await prisma.$transaction(async (tx) => {
+    const current = await tx.product.findUnique({ where: { id }, include: { unit: true } });
+    if (!current) throw notFound("Product not found");
 
-  if (data.name !== undefined) updateData.name = data.name;
-  if (data.sku !== undefined) updateData.sku = data.sku;
-  if (data.barcode !== undefined) updateData.barcode = data.barcode;
-  if (data.description !== undefined) updateData.description = data.description;
-  if (data.categoryId !== undefined) updateData.categoryId = parseInt(data.categoryId, 10);
-  if (data.brandId !== undefined) updateData.brandId = data.brandId ? parseInt(data.brandId, 10) : null;
-  if (data.unitId !== undefined) updateData.unitId = parseInt(data.unitId, 10);
-  if (data.supplierId !== undefined) updateData.supplierId = data.supplierId ? parseInt(data.supplierId, 10) : null;
-  if (data.costPrice !== undefined) updateData.costPrice = parseFloat(data.costPrice);
-  if (data.salePrice !== undefined) updateData.salePrice = parseFloat(data.salePrice);
-  if (data.stockQuantity !== undefined) updateData.stockQuantity = parseFloat(data.stockQuantity);
-  if (data.lowStockAlert !== undefined) updateData.lowStockAlert = parseFloat(data.lowStockAlert);
+    await assertUniqueCodes(tx, { sku: data.sku, barcode: data.barcode }, id);
 
-  return prisma.$transaction(async (tx) => {
-    // 1. Fetch current product and all associated stock batches
-    const currentProduct = await tx.product.findUnique({
-      where: { id: productId },
-      include: {
-        stockBatches: {
-          orderBy: { createdAt: "desc" },
-        },
-      },
-    });
+    const updateData = {};
+    for (const key of ["name", "sku", "barcode", "description", "categoryId", "unitId"]) {
+      if (data[key] !== undefined) updateData[key] = data[key] === "" ? null : data[key];
+    }
+    if (data.brandId !== undefined) updateData.brandId = data.brandId || null;
+    if (data.supplierId !== undefined) updateData.supplierId = data.supplierId || null;
+    if (data.costPrice !== undefined) updateData.costPrice = round2(data.costPrice);
+    if (data.salePrice !== undefined) updateData.salePrice = round2(data.salePrice);
+    if (data.lowStockAlert !== undefined) updateData.lowStockAlert = round3(data.lowStockAlert);
 
-    if (!currentProduct) throw new Error("Product not found");
+    await tx.product.update({ where: { id }, data: updateData });
 
-    // 2. Update Product record
-    const updatedProduct = await tx.product.update({
-      where: { id: productId },
-      data: updateData,
-      include: {
-        category: true,
-        brand: true,
-        unit: true,
-        supplier: true,
-      },
-    });
+    const changes = {};
+    if (updateData.costPrice !== undefined && updateData.costPrice !== current.costPrice) {
+      changes.costPrice = { from: current.costPrice, to: updateData.costPrice };
+      // Lots that did not come from a purchase invoice (opening / manual) follow the corrected cost.
+      await tx.stockBatch.updateMany({
+        where: { productId: id, stockEntryId: null, remainingQuantity: { gt: QTY_EPSILON } },
+        data: { costPrice: updateData.costPrice },
+      });
+    }
+    if (updateData.salePrice !== undefined && updateData.salePrice !== current.salePrice) {
+      changes.salePrice = { from: current.salePrice, to: updateData.salePrice };
+      // A new catalog price applies to all stock still on the shelf.
+      await tx.stockBatch.updateMany({
+        where: { productId: id, remainingQuantity: { gt: QTY_EPSILON } },
+        data: { sellingPrice: updateData.salePrice },
+      });
+    }
+    if (updateData.name && updateData.name !== current.name) changes.name = { from: current.name, to: updateData.name };
 
-    // 3. Synchronize StockBatch records to prevent inventory and valuation drift
-    const newQty = updateData.stockQuantity !== undefined ? updateData.stockQuantity : currentProduct.stockQuantity;
-    const newCost = updateData.costPrice !== undefined ? updateData.costPrice : (currentProduct.costPrice || 0);
-    const newSale = updateData.salePrice !== undefined ? updateData.salePrice : (currentProduct.salePrice || 0);
-
-    const batches = currentProduct.stockBatches || [];
-    const currentBatchSum = batches.reduce((sum, b) => sum + (b.remainingQuantity || 0), 0);
-
-    if (updateData.stockQuantity !== undefined) {
-      const diff = newQty - currentBatchSum;
-
-      if (batches.length === 0) {
-        if (newQty > 0) {
-          await tx.stockBatch.create({
-            data: {
-              productId,
-              initialQuantity: newQty,
-              remainingQuantity: newQty,
-              costPrice: newCost,
-              sellingPrice: newSale,
-            },
-          });
-        }
-      } else if (batches.length === 1) {
-        // Single batch (direct creation lot)
-        const singleBatch = batches[0];
-        const newRemaining = Math.max(0, newQty);
-        await tx.stockBatch.update({
-          where: { id: singleBatch.id },
-          data: {
-            remainingQuantity: newRemaining,
-            initialQuantity: Math.max(singleBatch.initialQuantity, newRemaining),
-            ...(updateData.costPrice !== undefined ? { costPrice: newCost } : {}),
-            ...(updateData.salePrice !== undefined ? { sellingPrice: newSale } : {}),
-          },
+    if (data.stockQuantity !== undefined) {
+      const target = round3(data.stockQuantity);
+      const delta = round3(target - current.stockQuantity);
+      if (Math.abs(delta) > QTY_EPSILON) {
+        await applyAdjustment(tx, user, {
+          productId: id,
+          quantity: delta,
+          reason: data.adjustmentReason || "COUNT_CORRECTION",
+          notes: data.adjustmentNotes || "Stock edited from product form",
         });
-      } else {
-        // Multiple lots exist
-        if (diff < 0) {
-          let toDeduct = Math.abs(diff);
-          for (const batch of batches) {
-            if (toDeduct <= 0) break;
-            if ((batch.remainingQuantity || 0) <= 0) continue;
-            const take = Math.min(batch.remainingQuantity, toDeduct);
-            await tx.stockBatch.update({
-              where: { id: batch.id },
-              data: { remainingQuantity: batch.remainingQuantity - take },
-            });
-            toDeduct -= take;
-          }
-        } else if (diff > 0) {
-          const latestBatch = batches[0];
-          await tx.stockBatch.update({
-            where: { id: latestBatch.id },
-            data: {
-              initialQuantity: latestBatch.initialQuantity + diff,
-              remainingQuantity: latestBatch.remainingQuantity + diff,
-            },
-          });
-        }
-
-        // Synchronize costPrice on initial batch if updated
-        if (updateData.costPrice !== undefined) {
-          const initialBatch = batches.find((b) => !b.stockEntryId);
-          if (initialBatch) {
-            await tx.stockBatch.update({
-              where: { id: initialBatch.id },
-              data: { costPrice: newCost },
-            });
-          }
-        }
-      }
-    } else {
-      // Stock quantity was not changed, but cost or sale price might have changed
-      if (batches.length === 1 && (updateData.costPrice !== undefined || updateData.salePrice !== undefined)) {
-        await tx.stockBatch.update({
-          where: { id: batches[0].id },
-          data: {
-            ...(updateData.costPrice !== undefined ? { costPrice: newCost } : {}),
-            ...(updateData.salePrice !== undefined ? { sellingPrice: newSale } : {}),
-          },
-        });
-      } else if (batches.length > 1 && updateData.costPrice !== undefined) {
-        const initialBatch = batches.find((b) => !b.stockEntryId);
-        if (initialBatch) {
-          await tx.stockBatch.update({
-            where: { id: initialBatch.id },
-            data: { costPrice: newCost },
-          });
-        }
       }
     }
 
-    // Attach active stockBatches to returned object
-    const finalBatches = await tx.stockBatch.findMany({
-      where: { productId, remainingQuantity: { gt: 0 } },
-      orderBy: { createdAt: "asc" },
-    });
-    updatedProduct.stockBatches = finalBatches;
+    if (Object.keys(changes).length > 0) {
+      await audit(tx, user, "PRODUCT_UPDATED", "Product", id, { product: current.name, ...changes });
+    }
+  }, TX_OPTIONS);
 
-    return updatedProduct;
-  });
+  return getProductById(id, user);
 };
 
-export const deleteProduct = async (id) => {
-  const productId = parseInt(id, 10);
-  // Soft delete
-  return prisma.product.update({
-    where: { id: productId },
-    data: { isActive: false },
-  });
+export const deleteProduct = async (user, id) => {
+  const product = await prisma.product.update({ where: { id }, data: { isActive: false } });
+  await audit(null, user, "PRODUCT_DEACTIVATED", "Product", id, { name: product.name, stockQuantity: product.stockQuantity });
+  return product;
 };
 
 export const getProductPriceHistory = async (id) => {
-  const productId = parseInt(id, 10);
   return prisma.stockEntry.findMany({
-    where: { productId },
+    where: { productId: id },
     include: { supplier: true },
     orderBy: { purchasedAt: "desc" },
   });

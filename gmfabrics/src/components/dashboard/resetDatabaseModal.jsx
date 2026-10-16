@@ -9,10 +9,11 @@ import api from "../../services/apiService.js";
 
 export const ResetDatabaseModal = ({ isOpen, onClose, onSuccess }) => {
   const [confirmationInput, setConfirmationInput] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const CONFIRM_PHRASE = "DELETE ALL DATA";
 
-  const isMatched = confirmationInput.trim() === CONFIRM_PHRASE;
+  const isMatched = confirmationInput.trim() === CONFIRM_PHRASE && password.length > 0;
 
   const handleReset = async (e) => {
     e.preventDefault();
@@ -20,9 +21,10 @@ export const ResetDatabaseModal = ({ isOpen, onClose, onSuccess }) => {
 
     setLoading(true);
     try {
-      const res = await api.delete("/backup/reset-database");
+      const res = await api.delete("/backup/reset-database", { data: { password, confirmText: "RESET" } });
       showToastSuccess(res?.message || "All database data has been completely erased.");
       setConfirmationInput("");
+      setPassword("");
       onClose();
       if (onSuccess) onSuccess();
     } catch (err) {
@@ -35,6 +37,7 @@ export const ResetDatabaseModal = ({ isOpen, onClose, onSuccess }) => {
 
   const handleClose = () => {
     setConfirmationInput("");
+    setPassword("");
     onClose();
   };
 
@@ -68,7 +71,7 @@ export const ResetDatabaseModal = ({ isOpen, onClose, onSuccess }) => {
         {/* Safety Note */}
         <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 rounded-lg flex items-center gap-2 text-xs text-emerald-800 dark:text-emerald-300 font-medium">
           <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-          <span>Your Administrator login credentials and standard measurement units will be preserved.</span>
+          <span>Admin logins, measurement units and expense categories are kept. Download an Excel backup first.</span>
         </div>
 
         {/* Confirmation Input */}
@@ -83,6 +86,18 @@ export const ResetDatabaseModal = ({ isOpen, onClose, onSuccess }) => {
             placeholder="Type DELETE ALL DATA to unlock"
             disabled={loading}
             className="w-full px-3 py-2 text-xs font-mono font-bold bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-none text-zinc-900 dark:text-zinc-100"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="block text-xs font-bold text-zinc-800 dark:text-zinc-200">Your admin password</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            disabled={loading}
+            className="w-full px-3 py-2 text-xs bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-none text-zinc-900 dark:text-zinc-100"
           />
         </div>
 

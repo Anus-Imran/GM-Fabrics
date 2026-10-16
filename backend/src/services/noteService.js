@@ -1,4 +1,5 @@
 import { prisma } from "../config/prisma.js";
+import { badRequest, notFound } from "../utils/appError.js";
 
 /**
  * Get all notes with optional filtering & search
@@ -49,7 +50,7 @@ export const getNoteById = async (id) => {
       user: { select: { id: true, name: true, email: true } },
     },
   });
-  if (!note) throw new Error("Note not found");
+  if (!note) throw notFound("Note not found");
   return note;
 };
 
@@ -60,7 +61,7 @@ export const createNote = async (data, userId) => {
   const { title, content, priority, color, dueDate } = data;
 
   if (!title || !title.trim()) {
-    throw new Error("Note title is required");
+    throw badRequest("Note title is required");
   }
 
   return prisma.note.create({
@@ -84,7 +85,7 @@ export const createNote = async (data, userId) => {
 export const updateNote = async (id, data) => {
   const noteId = parseInt(id, 10);
   const existing = await prisma.note.findUnique({ where: { id: noteId } });
-  if (!existing) throw new Error("Note not found");
+  if (!existing) throw notFound("Note not found");
 
   const updateData = {};
   if (data.title !== undefined) updateData.title = data.title.trim();
@@ -109,7 +110,7 @@ export const updateNote = async (id, data) => {
 export const toggleNoteCompletion = async (id) => {
   const noteId = parseInt(id, 10);
   const existing = await prisma.note.findUnique({ where: { id: noteId } });
-  if (!existing) throw new Error("Note not found");
+  if (!existing) throw notFound("Note not found");
 
   return prisma.note.update({
     where: { id: noteId },
@@ -126,7 +127,7 @@ export const toggleNoteCompletion = async (id) => {
 export const deleteNote = async (id) => {
   const noteId = parseInt(id, 10);
   const existing = await prisma.note.findUnique({ where: { id: noteId } });
-  if (!existing) throw new Error("Note not found");
+  if (!existing) throw notFound("Note not found");
 
   await prisma.note.delete({ where: { id: noteId } });
   return { message: "Note deleted successfully", id: noteId };

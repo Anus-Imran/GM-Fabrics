@@ -1,370 +1,392 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "../config/prisma.js";
+import { round2, round3 } from "../utils/money.js";
+import {
+  OFFSET_MS,
+  PG_OFFSET,
+  startOfLocalDay,
+  endOfLocalDay,
+  startOfLocalMonth,
+  startOfLocalYear,
+  parseLocalDate,
+  localMidnight,
+  localDateKey,
+} from "../utils/time.js";
+import { valuationOf } from "./inventoryService.js";
+import { isAdmin } from "../middleware/adminMiddleware.js";
 
-export const getDashboardKpis = async (params = {}) => {
-  const { period = "7days", startDate: customStart, endDate: customEnd } = params;
+/**
+ * Reports are computed with a handful of SQL aggregates (GROUP BY in Postgres) instead of
+ * loading every sale into memory or running one query per day — this is what keeps the
+ * dashboard fast as the data grows.
+ */
 
-  let rangeStart = new Date();
-  let rangeEnd = new Date();
-  rangeEnd.setHours(23, 59, 59, 999);
+const num = (v) => (v === null || v === undefined ? 0 : Number(v));
+const SHIFT = Prisma.raw(`interval '${PG_OFFSET}'`);
+const NOT_VOIDED = Prisma.sql`s."status" <> 'VOIDED'`;
 
+export const resolvePeriod = async ({ period = "7days", startDate, endDate }) => {
   const now = new Date();
+  let start;
+  let end = endOfLocalDay(now);
 
-  if (period === "today") {
-    rangeStart.setHours(0, 0, 0, 0);
-  } else if (period === "7days") {
-    rangeStart.setDate(rangeStart.getDate() - 6);
-    rangeStart.setHours(0, 0, 0, 0);
-  } else if (period === "this_month") {
-    rangeStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-  } else if (period === "last_month") {
-    rangeStart = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
-    rangeEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
-  } else if (period === "this_year") {
-    rangeStart = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
-  } else if (period === "all_time") {
-    rangeStart = new Date(2020, 0, 1, 0, 0, 0, 0);
-  } else if (period === "custom" && customStart && customEnd) {
-    rangeStart = new Date(customStart);
-    rangeStart.setHours(0, 0, 0, 0);
-    rangeEnd = new Date(customEnd);
-    rangeEnd.setHours(23, 59, 59, 999);
-  } else {
-    // Default to last 7 days
-    rangeStart.setDate(rangeStart.getDate() - 6);
-    rangeStart.setHours(0, 0, 0, 0);
-  }
-
-  // 1. Sales in period
-  const periodSales = await prisma.sale.findMany({
-    where: {
-      createdAt: { gte: rangeStart, lte: rangeEnd },
-      status: { in: ["COMPLETED", "PARTIALLY_REFUNDED"] },
-    },
-    include: {
-      saleItems: {
-        include: { product: { select: { costPrice: true, categoryId: true } } },
-      },
-    },
-  });
-
-  const periodGrossSales = periodSales.reduce((sum, s) => sum + s.totalAmount, 0);
-  const periodSalesCount = periodSales.length;
-
-  // 2. Expenses in period
-  const periodExpensesAgg = await prisma.expense.aggregate({
-    where: { date: { gte: rangeStart, lte: rangeEnd } },
-    _sum: { amount: true },
-  });
-  const periodExpenses = periodExpensesAgg._sum.amount || 0;
-
-  // 3. Returns in period
-  const periodReturnsAgg = await prisma.return.aggregate({
-    where: { createdAt: { gte: rangeStart, lte: rangeEnd } },
-    _sum: { refundAmount: true },
-    _count: { id: true },
-  });
-  const periodReturnsAmount = periodReturnsAgg._sum.refundAmount || 0;
-  const periodReturnsCount = periodReturnsAgg._count.id || 0;
-
-  // Net Revenue = Gross Sales Total - Returns Total
-  const periodRevenue = Math.max(0, periodGrossSales - periodReturnsAmount);
-
-  // Calculate exact COGS in period based on item purchase cost prices
-  let periodCogs = 0;
-  periodSales.forEach((s) => {
-    s.saleItems.forEach((si) => {
-      const cost = (si.costPrice && si.costPrice > 0) ? si.costPrice : (si.product ? si.product.costPrice : 0);
-      periodCogs += si.quantity * cost;
-    });
-  });
-
-  // 4. Net Profit calculation (Net Revenue - COGS - Operating Expenses)
-  const grossProfit = periodRevenue - periodCogs;
-  const netProfit = grossProfit - periodExpenses;
-
-  // 5. Total Khata Credit Owed across system
-  const customerBalanceAgg = await prisma.customer.aggregate({
-    _sum: { outstandingBalance: true },
-    _count: { id: true },
-  });
-  const totalKhataBalance = customerBalanceAgg._sum.outstandingBalance || 0;
-
-  // 6. Total Stock Valuation across all active products and multi-batch lots
-  const productsWithStock = await prisma.product.findMany({
-    where: { isActive: true, stockQuantity: { gt: 0 } },
-    include: {
-      stockBatches: {
-        where: { remainingQuantity: { gt: 0 } },
-        orderBy: { createdAt: "asc" },
-      },
-    },
-  });
-
-  let totalStockValue = 0;
-  let totalStockItems = 0;
-
-  for (const p of productsWithStock) {
-    const pQty = Number(p.stockQuantity || 0);
-    const pCost = Number(p.costPrice || 0);
-    totalStockItems += pQty;
-
-    const batches = p.stockBatches || [];
-    if (batches.length > 0) {
-      const batchQtySum = batches.reduce((sum, b) => sum + Number(b.remainingQuantity || 0), 0);
-      const batchValSum = batches.reduce((sum, b) => {
-        const cost = Number(b.costPrice ?? b.costPerUnit ?? pCost);
-        return sum + (Number(b.remainingQuantity || 0) * cost);
-      }, 0);
-
-      if (batchQtySum > 0 && Math.abs(batchQtySum - pQty) > 0.001) {
-        totalStockValue += (batchValSum * (pQty / batchQtySum));
-      } else {
-        totalStockValue += batchValSum;
+  switch (period) {
+    case "today":
+      start = startOfLocalDay(now);
+      break;
+    case "this_month":
+      start = startOfLocalMonth(now);
+      break;
+    case "last_month":
+      start = startOfLocalMonth(now, -1);
+      end = new Date(startOfLocalMonth(now).getTime() - 1);
+      break;
+    case "this_year":
+      start = startOfLocalYear(now);
+      break;
+    case "all_time": {
+      const [first] = await prisma.$queryRaw`
+        SELECT LEAST(
+          (SELECT MIN("createdAt") FROM "Sale"),
+          (SELECT MIN("date") FROM "Expense")
+        ) AS first`;
+      start = first?.first ? startOfLocalMonth(new Date(first.first)) : startOfLocalMonth(now);
+      break;
+    }
+    case "custom": {
+      const s = parseLocalDate(startDate);
+      const e = parseLocalDate(endDate);
+      if (s && e) {
+        start = s <= e ? s : e;
+        end = endOfLocalDay(s <= e ? e : s);
+        break;
       }
-    } else {
-      totalStockValue += pQty * pCost;
+      start = new Date(startOfLocalDay(now).getTime() - 6 * 86400000);
+      break;
     }
+    case "7days":
+    default:
+      start = new Date(startOfLocalDay(now).getTime() - 6 * 86400000);
   }
+  return { start, end };
+};
 
-  // 7. Low stock products
-  const allActiveProducts = await prisma.product.findMany({
-    where: { isActive: true },
-    include: { unit: true, category: true, brand: true },
-  });
-  const lowStockProducts = allActiveProducts.filter(
-    (p) => p.stockQuantity <= p.lowStockAlert
-  );
+/** Revenue, COGS (net of restocked returns), expenses and profit for a range. */
+const computeFinancials = async (start, end) => {
+  const [salesAgg, cogsAgg, returnsAgg, returnedCogsAgg, expensesAgg] = await Promise.all([
+    prisma.$queryRaw`
+      SELECT COUNT(*)::int AS count, COALESCE(SUM(s."totalAmount"), 0) AS gross, COALESCE(SUM(s."discountAmount"), 0) AS discount
+      FROM "Sale" s
+      WHERE s."createdAt" BETWEEN ${start} AND ${end} AND ${NOT_VOIDED}`,
+    prisma.$queryRaw`
+      SELECT COALESCE(SUM(si."quantity" * COALESCE(NULLIF(si."costPrice", 0), p."costPrice")), 0) AS cogs
+      FROM "SaleItem" si
+      JOIN "Sale" s ON s.id = si."saleId"
+      JOIN "Product" p ON p.id = si."productId"
+      WHERE s."createdAt" BETWEEN ${start} AND ${end} AND ${NOT_VOIDED}`,
+    prisma.$queryRaw`
+      SELECT COUNT(*)::int AS count, COALESCE(SUM(r."refundAmount"), 0) AS amount
+      FROM "Return" r
+      WHERE r."createdAt" BETWEEN ${start} AND ${end}`,
+    prisma.$queryRaw`
+      SELECT COALESCE(SUM(ri."quantity" * COALESCE(NULLIF(si."costPrice", 0), p."costPrice")), 0) AS cogs
+      FROM "ReturnItem" ri
+      JOIN "Return" r ON r.id = ri."returnId"
+      JOIN "SaleItem" si ON si.id = ri."saleItemId"
+      JOIN "Product" p ON p.id = ri."productId"
+      WHERE r."createdAt" BETWEEN ${start} AND ${end} AND ri."condition" = 'RESTOCK'`,
+    prisma.expense.aggregate({ where: { date: { gte: start, lte: end } }, _sum: { amount: true } }),
+  ]);
 
-  // 7. Payment Methods Breakdown (Cash vs Card vs Credit) with Net Sales
-  const paymentMethodMap = { CASH: 0, CARD: 0, CREDIT: 0 };
-  periodSales.forEach((s) => {
-    const method = s.paymentMethod || "CASH";
-    if (paymentMethodMap[method] !== undefined) {
-      paymentMethodMap[method] += s.totalAmount;
-    }
-  });
-
-  // Deduct returned amounts by refund method
-  const periodReturnsList = await prisma.return.findMany({
-    where: { createdAt: { gte: rangeStart, lte: rangeEnd } },
-  });
-  periodReturnsList.forEach((r) => {
-    const method = r.refundMethod || "CASH";
-    if (paymentMethodMap[method] !== undefined) {
-      paymentMethodMap[method] = Math.max(0, paymentMethodMap[method] - r.refundAmount);
-    }
-  });
-
-  const paymentMethodBreakdown = [
-    { name: "Cash Counter", value: paymentMethodMap.CASH, color: "#10b981" },
-    { name: "Card / Digital", value: paymentMethodMap.CARD, color: "#3b82f6" },
-    { name: "Khata Credit", value: paymentMethodMap.CREDIT, color: "#f59e0b" },
-  ];
-
-  // 8. Category Breakdown
-  const categoryRevenueMap = {};
-  const categoriesList = await prisma.category.findMany();
-  categoriesList.forEach((c) => {
-    categoryRevenueMap[c.id] = { name: c.name, revenue: 0 };
-  });
-
-  periodSales.forEach((s) => {
-    s.saleItems.forEach((si) => {
-      const catId = si.product?.categoryId;
-      if (catId && categoryRevenueMap[catId]) {
-        categoryRevenueMap[catId].revenue += si.subtotal;
-      }
-    });
-  });
-
-  const categoryBreakdown = Object.values(categoryRevenueMap)
-    .filter((c) => c.revenue > 0)
-    .sort((a, b) => b.revenue - a.revenue);
-
-  // 9. Trend Chart Data (Group by Day or Month depending on range duration)
-  const diffDays = Math.max(1, Math.ceil((rangeEnd - rangeStart) / (1000 * 60 * 60 * 24)));
-  const isMonthlyView = diffDays > 35;
-
-  const salesTrend = [];
-
-  if (isMonthlyView) {
-    // Generate monthly buckets
-    let currentMonth = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1);
-    while (currentMonth <= rangeEnd) {
-      const mStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1, 0, 0, 0);
-      const mEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0, 23, 59, 59);
-
-      const mSales = await prisma.sale.findMany({
-        where: { createdAt: { gte: mStart, lte: mEnd }, status: { in: ["COMPLETED", "PARTIALLY_REFUNDED"] } },
-      });
-      const mGross = mSales.reduce((sum, s) => sum + s.totalAmount, 0);
-
-      const mExpAgg = await prisma.expense.aggregate({
-        where: { date: { gte: mStart, lte: mEnd } },
-        _sum: { amount: true },
-      });
-      const mExp = mExpAgg._sum.amount || 0;
-
-      const mRetAgg = await prisma.return.aggregate({
-        where: { createdAt: { gte: mStart, lte: mEnd } },
-        _sum: { refundAmount: true },
-      });
-      const mRet = mRetAgg._sum.refundAmount || 0;
-
-      const mNetRev = Math.max(0, mGross - mRet);
-      const label = mStart.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
-
-      salesTrend.push({
-        label,
-        date: mStart.toISOString().split("T")[0],
-        revenue: mNetRev,
-        expenses: mExp,
-        returns: mRet,
-        netProfit: Math.max(0, mNetRev - mExp),
-        orders: mSales.length,
-      });
-
-      currentMonth.setMonth(currentMonth.getMonth() + 1);
-    }
-  } else {
-    // Generate daily buckets
-    let dayCursor = new Date(rangeStart);
-    while (dayCursor <= rangeEnd) {
-      const dStart = new Date(dayCursor);
-      dStart.setHours(0, 0, 0, 0);
-      const dEnd = new Date(dayCursor);
-      dEnd.setHours(23, 59, 59, 999);
-
-      const dSales = await prisma.sale.findMany({
-        where: { createdAt: { gte: dStart, lte: dEnd }, status: { in: ["COMPLETED", "PARTIALLY_REFUNDED"] } },
-      });
-      const dGross = dSales.reduce((sum, s) => sum + s.totalAmount, 0);
-
-      const dExpAgg = await prisma.expense.aggregate({
-        where: { date: { gte: dStart, lte: dEnd } },
-        _sum: { amount: true },
-      });
-      const dExp = dExpAgg._sum.amount || 0;
-
-      const dRetAgg = await prisma.return.aggregate({
-        where: { createdAt: { gte: dStart, lte: dEnd } },
-        _sum: { refundAmount: true },
-      });
-      const dRet = dRetAgg._sum.refundAmount || 0;
-
-      const dNetRev = Math.max(0, dGross - dRet);
-      const label = dStart.toLocaleDateString("en-US", { weekday: "short", day: "numeric" });
-
-      salesTrend.push({
-        label,
-        date: dStart.toISOString().split("T")[0],
-        revenue: dNetRev,
-        expenses: dExp,
-        returns: dRet,
-        netProfit: Math.max(0, dNetRev - dExp),
-        orders: dSales.length,
-      });
-
-      dayCursor.setDate(dayCursor.getDate() + 1);
-    }
-  }
-
-  // 10. Recent sales
-  const recentSales = await prisma.sale.findMany({
-    take: 6,
-    orderBy: { createdAt: "desc" },
-    include: {
-      customer: { select: { name: true } },
-      user: { select: { name: true } },
-    },
-  });
-
-  // 11. Top products in period
-  const topItemsGroup = await prisma.saleItem.groupBy({
-    by: ["productId"],
-    _sum: { quantity: true, subtotal: true },
-    where: {
-      sale: { createdAt: { gte: rangeStart, lte: rangeEnd } },
-    },
-    orderBy: { _sum: { subtotal: "desc" } },
-    take: 5,
-  });
-
-  const topProducts = [];
-  for (const item of topItemsGroup) {
-    const p = await prisma.product.findUnique({
-      where: { id: item.productId },
-      include: { category: true, unit: true },
-    });
-    if (p) {
-      topProducts.push({
-        id: p.id,
-        name: p.name,
-        categoryName: p.category?.name || "Fabric",
-        unitSymbol: p.unit?.symbol || "pcs",
-        totalSold: item._sum.quantity || 0,
-        revenue: item._sum.subtotal || 0,
-      });
-    }
-  }
+  const gross = round2(num(salesAgg[0].gross));
+  const returns = round2(num(returnsAgg[0].amount));
+  const revenue = round2(gross - returns);
+  // Stock that came back on the shelf is no longer a cost of goods sold.
+  const cogs = round2(num(cogsAgg[0].cogs) - num(returnedCogsAgg[0].cogs));
+  const expenses = round2(expensesAgg._sum.amount || 0);
+  const grossProfit = round2(revenue - cogs);
 
   return {
-    period,
-    startDate: rangeStart.toISOString(),
-    endDate: rangeEnd.toISOString(),
-    todayRevenue: periodRevenue, // Backwards compatibility
-    todaySalesCount: periodSalesCount,
-    todayExpenses: periodExpenses,
-    periodRevenue,
-    periodSalesCount,
-    periodExpenses,
-    periodReturnsAmount,
-    periodReturnsCount,
-    netProfit,
-    totalKhataBalance,
-    totalStockValue,
-    totalStockItems,
-    lowStockCount: lowStockProducts.length,
-    lowStockProducts: lowStockProducts.slice(0, 6),
-    paymentMethodBreakdown,
-    categoryBreakdown,
+    salesCount: salesAgg[0].count,
+    grossSales: gross,
+    totalDiscount: round2(num(salesAgg[0].discount)),
+    returnsAmount: returns,
+    returnsCount: returnsAgg[0].count,
+    revenue,
+    cogs,
+    grossProfit,
+    expenses,
+    netProfit: round2(grossProfit - expenses),
+  };
+};
+
+const computeStockValuation = async () => {
+  const [row] = await prisma.$queryRaw`
+    WITH b AS (
+      SELECT "productId", SUM("remainingQuantity") AS q, SUM("remainingQuantity" * "costPrice") AS v
+      FROM "StockBatch" WHERE "remainingQuantity" > 0 GROUP BY "productId"
+    )
+    SELECT
+      COALESCE(SUM(
+        CASE
+          WHEN COALESCE(b.q, 0) <= p."stockQuantity"
+            THEN COALESCE(b.v, 0) + (p."stockQuantity" - COALESCE(b.q, 0)) * p."costPrice"
+          ELSE b.v * p."stockQuantity" / NULLIF(b.q, 0)
+        END
+      ), 0) AS value,
+      COALESCE(SUM(p."stockQuantity"), 0) AS items,
+      COALESCE(SUM(p."stockQuantity" * p."salePrice"), 0) AS retail
+    FROM "Product" p
+    LEFT JOIN b ON b."productId" = p.id
+    WHERE p."isActive" = true AND p."stockQuantity" > 0`;
+  return { value: round2(num(row.value)), items: round3(num(row.items)), retail: round2(num(row.retail)) };
+};
+
+/** Builds a continuous list of day or month buckets (shop-local) for the trend chart. */
+const buildBuckets = (start, end, monthly) => {
+  const buckets = [];
+  const startLocal = new Date(start.getTime() + OFFSET_MS);
+  let y = startLocal.getUTCFullYear();
+  let m = startLocal.getUTCMonth();
+  let d = startLocal.getUTCDate();
+
+  for (let guard = 0; guard < 2000; guard++) {
+    const bucketStart = monthly ? localMidnight(y, m, 1) : localMidnight(y, m, d);
+    if (bucketStart > end) break;
+    const key = monthly ? `${y}-${String(m + 1).padStart(2, "0")}` : localDateKey(bucketStart);
+    const labelDate = new Date(Date.UTC(y, m, monthly ? 1 : d));
+    buckets.push({
+      key,
+      date: monthly ? `${key}-01` : key,
+      label: monthly
+        ? labelDate.toLocaleDateString("en-US", { month: "short", year: "2-digit", timeZone: "UTC" })
+        : labelDate.toLocaleDateString("en-US", { weekday: "short", day: "numeric", timeZone: "UTC" }),
+    });
+    if (monthly) {
+      m += 1;
+      if (m > 11) {
+        m = 0;
+        y += 1;
+      }
+    } else {
+      const next = new Date(Date.UTC(y, m, d + 1));
+      y = next.getUTCFullYear();
+      m = next.getUTCMonth();
+      d = next.getUTCDate();
+    }
+  }
+  return buckets;
+};
+
+const computeTrend = async (start, end) => {
+  const days = Math.ceil((end - start) / 86400000);
+  const monthly = days > 62;
+  const unit = Prisma.raw(monthly ? "'month'" : "'day'");
+  const fmt = Prisma.raw(monthly ? "'YYYY-MM'" : "'YYYY-MM-DD'");
+
+  const [sales, expenses, returns] = await Promise.all([
+    prisma.$queryRaw`
+      SELECT to_char(date_trunc(${unit}, s."createdAt" + ${SHIFT}), ${fmt}) AS k,
+             COUNT(*)::int AS orders, COALESCE(SUM(s."totalAmount"), 0) AS gross
+      FROM "Sale" s
+      WHERE s."createdAt" BETWEEN ${start} AND ${end} AND ${NOT_VOIDED}
+      GROUP BY 1`,
+    prisma.$queryRaw`
+      SELECT to_char(date_trunc(${unit}, e."date" + ${SHIFT}), ${fmt}) AS k, COALESCE(SUM(e."amount"), 0) AS amount
+      FROM "Expense" e
+      WHERE e."date" BETWEEN ${start} AND ${end}
+      GROUP BY 1`,
+    prisma.$queryRaw`
+      SELECT to_char(date_trunc(${unit}, r."createdAt" + ${SHIFT}), ${fmt}) AS k, COALESCE(SUM(r."refundAmount"), 0) AS amount
+      FROM "Return" r
+      WHERE r."createdAt" BETWEEN ${start} AND ${end}
+      GROUP BY 1`,
+  ]);
+
+  const salesMap = new Map(sales.map((r) => [r.k, r]));
+  const expMap = new Map(expenses.map((r) => [r.k, num(r.amount)]));
+  const retMap = new Map(returns.map((r) => [r.k, num(r.amount)]));
+
+  return buildBuckets(start, end, monthly).map((b) => {
+    const gross = num(salesMap.get(b.key)?.gross);
+    const ret = retMap.get(b.key) || 0;
+    const exp = expMap.get(b.key) || 0;
+    const revenue = round2(gross - ret);
+    return {
+      label: b.label,
+      date: b.date,
+      revenue,
+      expenses: round2(exp),
+      returns: round2(ret),
+      netProfit: round2(revenue - exp),
+      orders: salesMap.get(b.key)?.orders || 0,
+    };
+  });
+};
+
+const computeTopProducts = async (start, end, limit = 5) => {
+  const rows = await prisma.$queryRaw`
+    WITH sold AS (
+      SELECT si."productId", SUM(si."quantity") AS qty, SUM(si."subtotal") AS revenue
+      FROM "SaleItem" si JOIN "Sale" s ON s.id = si."saleId"
+      WHERE s."createdAt" BETWEEN ${start} AND ${end} AND ${NOT_VOIDED}
+      GROUP BY si."productId"
+    ),
+    returned AS (
+      SELECT ri."productId", SUM(ri."quantity") AS qty, SUM(ri."refundAmount") AS amount
+      FROM "ReturnItem" ri JOIN "Return" r ON r.id = ri."returnId"
+      WHERE r."createdAt" BETWEEN ${start} AND ${end}
+      GROUP BY ri."productId"
+    )
+    SELECT p.id, p.name, c.name AS "categoryName", u.symbol AS "unitSymbol",
+           sold.qty - COALESCE(returned.qty, 0) AS "totalSold",
+           sold.revenue - COALESCE(returned.amount, 0) AS revenue
+    FROM sold
+    JOIN "Product" p ON p.id = sold."productId"
+    LEFT JOIN "Category" c ON c.id = p."categoryId"
+    LEFT JOIN "Unit" u ON u.id = p."unitId"
+    LEFT JOIN returned ON returned."productId" = sold."productId"
+    ORDER BY revenue DESC
+    LIMIT ${limit}`;
+
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    categoryName: r.categoryName || "Fabric",
+    unitSymbol: r.unitSymbol || "pcs",
+    totalSold: round3(num(r.totalSold)),
+    revenue: round2(num(r.revenue)),
+  }));
+};
+
+export const getDashboardKpis = async (params = {}, user) => {
+  const admin = isAdmin(user);
+  const { start, end } = await resolvePeriod(params);
+
+  const [fin, paymentRows, refundRows, categoryRows, trend, topProducts, khata, stock, lowStockCount, lowStockProducts, recentSales] =
+    await Promise.all([
+      computeFinancials(start, end),
+      prisma.sale.groupBy({
+        by: ["paymentMethod"],
+        where: { createdAt: { gte: start, lte: end }, status: { not: "VOIDED" } },
+        _sum: { totalAmount: true },
+      }),
+      prisma.return.groupBy({
+        by: ["refundMethod"],
+        where: { createdAt: { gte: start, lte: end } },
+        _sum: { refundAmount: true },
+      }),
+      prisma.$queryRaw`
+        SELECT c.name, COALESCE(SUM(si."subtotal"), 0) AS revenue
+        FROM "SaleItem" si
+        JOIN "Sale" s ON s.id = si."saleId"
+        JOIN "Product" p ON p.id = si."productId"
+        JOIN "Category" c ON c.id = p."categoryId"
+        WHERE s."createdAt" BETWEEN ${start} AND ${end} AND ${NOT_VOIDED}
+        GROUP BY c.name
+        HAVING SUM(si."subtotal") > 0
+        ORDER BY revenue DESC`,
+      computeTrend(start, end),
+      computeTopProducts(start, end, 5),
+      prisma.customer.aggregate({ where: { outstandingBalance: { gt: 0 } }, _sum: { outstandingBalance: true }, _count: { id: true } }),
+      admin ? computeStockValuation() : Promise.resolve(null),
+      prisma.product.count({ where: { isActive: true, stockQuantity: { lte: prisma.product.fields.lowStockAlert } } }),
+      prisma.product.findMany({
+        where: { isActive: true, stockQuantity: { lte: prisma.product.fields.lowStockAlert } },
+        select: {
+          id: true,
+          name: true,
+          stockQuantity: true,
+          lowStockAlert: true,
+          unit: { select: { symbol: true, name: true } },
+          category: { select: { name: true } },
+          brand: { select: { name: true } },
+        },
+        orderBy: { stockQuantity: "asc" },
+        take: 6,
+      }),
+      prisma.sale.findMany({
+        take: 6,
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          saleNumber: true,
+          createdAt: true,
+          totalAmount: true,
+          paymentMethod: true,
+          status: true,
+          customer: { select: { name: true } },
+          user: { select: { name: true } },
+        },
+      }),
+    ]);
+
+  const methodTotal = (m) =>
+    round2(
+      Math.max(
+        0,
+        (paymentRows.find((r) => r.paymentMethod === m)?._sum.totalAmount || 0) -
+          (refundRows.find((r) => r.refundMethod === m)?._sum.refundAmount || 0)
+      )
+    );
+
+  const hide = (v) => (admin ? v : null);
+
+  return {
+    period: params.period || "7days",
+    startDate: start.toISOString(),
+    endDate: end.toISOString(),
+    todayRevenue: fin.revenue, // Backwards compatibility
+    todaySalesCount: fin.salesCount,
+    todayExpenses: fin.expenses,
+    periodRevenue: fin.revenue,
+    periodGrossSales: fin.grossSales,
+    periodSalesCount: fin.salesCount,
+    periodExpenses: fin.expenses,
+    periodReturnsAmount: fin.returnsAmount,
+    periodReturnsCount: fin.returnsCount,
+    periodDiscount: fin.totalDiscount,
+    cogs: hide(fin.cogs),
+    grossProfit: hide(fin.grossProfit),
+    netProfit: hide(fin.netProfit),
+    totalKhataBalance: round2(khata._sum.outstandingBalance || 0),
+    khataCustomers: khata._count.id,
+    totalStockValue: hide(stock?.value ?? null),
+    totalRetailValue: hide(stock?.retail ?? null),
+    totalStockItems: hide(stock?.items ?? null),
+    lowStockCount,
+    lowStockProducts,
+    paymentMethodBreakdown: [
+      { name: "Cash Counter", value: methodTotal("CASH"), color: "#10b981" },
+      { name: "Card / Digital", value: methodTotal("CARD"), color: "#3b82f6" },
+      { name: "Khata Credit", value: methodTotal("CREDIT"), color: "#f59e0b" },
+    ],
+    categoryBreakdown: categoryRows.map((r) => ({ name: r.name, revenue: round2(num(r.revenue)) })),
     recentSales,
     topProducts,
-    salesTrend,
+    salesTrend: trend,
   };
 };
 
 export const getSalesReport = async (from, to) => {
-  const startDate = from ? new Date(from) : new Date(new Date().setDate(new Date().getDate() - 30));
-  const endDate = to ? new Date(to) : new Date();
-
-  const sales = await prisma.sale.findMany({
-    where: {
-      createdAt: { gte: startDate, lte: endDate },
-    },
-    include: {
-      customer: { select: { name: true, phone: true } },
-      user: { select: { name: true } },
-      saleItems: {
-        include: { product: { select: { name: true, unit: true } } },
-      },
-    },
-    orderBy: { createdAt: "desc" },
+  const startDate = parseLocalDate(from) || new Date(startOfLocalDay().getTime() - 29 * 86400000);
+  const endDate = to ? endOfLocalDay(parseLocalDate(to) || new Date(to)) : endOfLocalDay();
+  const fin = await computeFinancials(startDate, endDate);
+  const byMethod = await prisma.sale.groupBy({
+    by: ["paymentMethod"],
+    where: { createdAt: { gte: startDate, lte: endDate }, status: { not: "VOIDED" } },
+    _sum: { totalAmount: true },
+    _count: { id: true },
   });
-
-  const totalRevenue = sales
-    .filter((s) => s.status !== "REFUNDED")
-    .reduce((sum, s) => sum + s.totalAmount, 0);
-
-  const totalDiscount = sales.reduce((sum, s) => sum + s.discountAmount, 0);
 
   return {
     from: startDate,
     to: endDate,
-    totalSalesCount: sales.length,
-    totalRevenue,
-    totalDiscount,
-    sales,
+    totalSalesCount: fin.salesCount,
+    totalRevenue: fin.revenue,
+    totalDiscount: fin.totalDiscount,
+    totalReturns: fin.returnsAmount,
+    byPaymentMethod: byMethod.map((r) => ({ method: r.paymentMethod, count: r._count.id, total: round2(r._sum.totalAmount || 0) })),
   };
 };
 
@@ -375,8 +397,12 @@ export const getInventoryReport = async () => {
       category: true,
       brand: true,
       unit: true,
-      supplier: true,
-      stockBatches: { where: { remainingQuantity: { gt: 0 } } },
+      supplier: { select: { id: true, name: true } },
+      stockBatches: {
+        where: { remainingQuantity: { gt: 0 } },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { remainingQuantity: true, costPrice: true },
+      },
     },
     orderBy: { name: "asc" },
   });
@@ -386,132 +412,54 @@ export const getInventoryReport = async () => {
   let totalItemsCount = 0;
 
   const productValuation = products.map((p) => {
-    let costVal = 0;
-    const totalQty = p.stockQuantity || 0;
-    const pCost = p.costPrice || 0;
-
-    if (p.stockBatches && p.stockBatches.length > 0) {
-      const batchQtySum = p.stockBatches.reduce((acc, b) => acc + (b.remainingQuantity || 0), 0);
-      const batchValSum = p.stockBatches.reduce((acc, b) => {
-        const cost = b.costPrice ?? b.costPerUnit ?? pCost;
-        return acc + ((b.remainingQuantity || 0) * cost);
-      }, 0);
-
-      if (batchQtySum > 0 && Math.abs(batchQtySum - totalQty) > 0.001) {
-        costVal = batchValSum * (totalQty / batchQtySum);
-      } else {
-        costVal = batchValSum;
-      }
-    } else {
-      costVal = totalQty * pCost;
-    }
-
-    const retailVal = totalQty * (p.salePrice || 0);
-
+    const costVal = valuationOf(p, p.stockBatches);
+    const retailVal = round2(Math.max(0, p.stockQuantity) * (p.salePrice || 0));
     totalCostValue += costVal;
     totalRetailValue += retailVal;
-    totalItemsCount += totalQty;
-
-    return {
-      ...p,
-      stockQuantity: totalQty,
-      costValuation: costVal,
-      retailValuation: retailVal,
-    };
+    totalItemsCount += Math.max(0, p.stockQuantity);
+    const { stockBatches, ...rest } = p;
+    return { ...rest, costValuation: costVal, retailValuation: retailVal };
   });
 
   return {
     totalProducts: products.length,
-    totalStockItems: totalItemsCount,
-    totalCostValue,
-    totalRetailValue,
-    potentialProfit: totalRetailValue - totalCostValue,
+    totalStockItems: round3(totalItemsCount),
+    totalCostValue: round2(totalCostValue),
+    totalRetailValue: round2(totalRetailValue),
+    potentialProfit: round2(totalRetailValue - totalCostValue),
     products: productValuation,
   };
 };
 
 export const getProfitLossReport = async (month, year) => {
-  const targetYear = parseInt(year || new Date().getFullYear(), 10);
-  const targetMonth = parseInt(month || new Date().getMonth() + 1, 10);
+  const now = new Date(Date.now() + OFFSET_MS);
+  const targetYear = parseInt(year || now.getUTCFullYear(), 10);
+  const targetMonth = parseInt(month || now.getUTCMonth() + 1, 10);
 
-  const startDate = new Date(targetYear, targetMonth - 1, 1);
-  const endDate = new Date(targetYear, targetMonth, 0, 23, 59, 59);
-
-  // 1. Revenue
-  const sales = await prisma.sale.findMany({
-    where: {
-      createdAt: { gte: startDate, lte: endDate },
-      status: { in: ["COMPLETED", "PARTIALLY_REFUNDED"] },
-    },
-    include: {
-      saleItems: {
-        include: { product: { select: { costPrice: true } } },
-      },
-    },
-  });
-
-  const grossRevenue = sales.reduce((sum, s) => sum + s.totalAmount, 0);
-
-  const returnsAgg = await prisma.return.aggregate({
-    where: { createdAt: { gte: startDate, lte: endDate } },
-    _sum: { refundAmount: true },
-  });
-  const totalReturns = returnsAgg._sum.refundAmount || 0;
-  const totalRevenue = Math.max(0, grossRevenue - totalReturns);
-
-  // 2. Cost of Goods Sold (COGS) based on exact FIFO item cost prices
-  let cogs = 0;
-  sales.forEach((s) => {
-    s.saleItems.forEach((si) => {
-      const cost = (si.costPrice && si.costPrice > 0) ? si.costPrice : (si.product ? si.product.costPrice : 0);
-      cogs += si.quantity * cost;
-    });
-  });
-
-  const grossProfit = totalRevenue - cogs;
-
-  // 3. Operating Expenses
-  const expenses = await prisma.expense.findMany({
-    where: { date: { gte: startDate, lte: endDate } },
-  });
-
-  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
-  const netProfit = grossProfit - totalExpenses;
+  const startDate = localMidnight(targetYear, targetMonth - 1, 1);
+  const endDate = new Date(localMidnight(targetYear, targetMonth, 1).getTime() - 1);
+  const fin = await computeFinancials(startDate, endDate);
 
   return {
     month: targetMonth,
     year: targetYear,
-    totalRevenue,
-    cogs,
-    grossProfit,
-    totalExpenses,
-    netProfit,
+    grossSales: fin.grossSales,
+    totalReturns: fin.returnsAmount,
+    totalRevenue: fin.revenue,
+    cogs: fin.cogs,
+    grossProfit: fin.grossProfit,
+    totalExpenses: fin.expenses,
+    netProfit: fin.netProfit,
   };
 };
 
-export const getTopProductsReport = async (limit = 10) => {
-  const topItems = await prisma.saleItem.groupBy({
-    by: ["productId"],
-    _sum: { quantity: true, subtotal: true },
-    orderBy: { _sum: { subtotal: "desc" } },
-    take: parseInt(limit, 10),
-  });
-
-  const result = [];
-  for (const item of topItems) {
-    const product = await prisma.product.findUnique({
-      where: { id: item.productId },
-      include: { category: true, brand: true, unit: true },
-    });
-
-    if (product) {
-      result.push({
-        product,
-        totalQuantitySold: item._sum.quantity,
-        totalRevenueGenerated: item._sum.subtotal,
-      });
-    }
-  }
-
-  return result;
+export const getTopProductsReport = async (limit = 10, from, to) => {
+  const start = parseLocalDate(from) || new Date(0);
+  const end = to ? endOfLocalDay(parseLocalDate(to) || new Date(to)) : endOfLocalDay();
+  const rows = await computeTopProducts(start, end, Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100));
+  return rows.map((r) => ({
+    product: { id: r.id, name: r.name, category: { name: r.categoryName }, unit: { symbol: r.unitSymbol } },
+    totalQuantitySold: r.totalSold,
+    totalRevenueGenerated: r.revenue,
+  }));
 };

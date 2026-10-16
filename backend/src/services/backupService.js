@@ -1,6 +1,9 @@
 import * as XLSX from "xlsx";
 import JSZip from "jszip";
+import bcrypt from "bcryptjs";
 import { prisma } from "../config/prisma.js";
+import { badRequest } from "../utils/appError.js";
+import { audit } from "../utils/audit.js";
 
 /**
  * Fetch and format all database tables
@@ -24,7 +27,7 @@ export const getAllTablesData = async () => {
       orderBy: { id: "asc" },
     }),
     prisma.sale.findMany({
-      include: { customer: true, user: true },
+      include: { customer: true, user: { select: { name: true } } },
       orderBy: { id: "desc" },
     }),
     prisma.saleItem.findMany({
@@ -41,7 +44,7 @@ export const getAllTablesData = async () => {
       orderBy: { id: "desc" },
     }),
     prisma.expense.findMany({
-      include: { category: true, user: true },
+      include: { category: true, user: { select: { name: true } } },
       orderBy: { date: "desc" },
     }),
     prisma.supplier.findMany({ orderBy: { id: "asc" } }),
@@ -226,51 +229,59 @@ export const exportAsCsvZip = async () => {
 };
 
 /**
- * Safely Reset / Wipe Entire System Database (Preserves Admin and Core Units)
+ * Safely Reset / Wipe Entire System Database (Preserves admin users, units and expense categories).
+ * Requires the acting admin's password; the action is written to the audit log.
  */
-export const resetDatabase = async () => {
-  return prisma.$transaction(
+export const resetDatabase = async (user, password) => {
+  const admin = await prisma.user.findUnique({ where: { id: user.id } });
+  if (!admin || !(await bcrypt.compare(password, admin.password))) {
+    throw badRequest("Admin password is incorrect");
+  }
+
+  const result = await prisma.$transaction(
     async (tx) => {
-      // 1. Delete POS Transactions and Returns (Leaf & Child Records first)
+      // 1. POS transactions, returns and ledgers (child records first)
       await tx.receipt.deleteMany({});
       await tx.returnItem.deleteMany({});
       await tx.return.deleteMany({});
+      await tx.khataEntry.deleteMany({});
       await tx.saleItem.deleteMany({});
       await tx.sale.deleteMany({});
 
-      // 2. Delete Stock Lots and Purchases
+      // 2. Stock lots, adjustments, purchases and supplier payments
+      await tx.stockAdjustment.deleteMany({});
       await tx.stockBatch.deleteMany({});
       await tx.stockEntry.deleteMany({});
+      await tx.supplierPayment.deleteMany({});
 
-      // 3. Delete Product Catalog
+      // 3. Product catalog
       await tx.product.deleteMany({});
 
-      // 4. Delete Expenses, Notes, Notifications
+      // 4. Expenses, notes, notifications, cash sessions, audit log
       await tx.expense.deleteMany({});
-      await tx.expenseCategory.deleteMany({});
       await tx.note.deleteMany({});
       await tx.notification.deleteMany({});
+      await tx.cashSession.deleteMany({});
+      await tx.auditLog.deleteMany({});
 
-      // 5. Delete Master Data (Customers, Suppliers, Brands, Categories)
+      // 5. Master data (expense categories and units are kept so the shop can keep working)
       await tx.customer.deleteMany({});
       await tx.supplier.deleteMany({});
       await tx.brand.deleteMany({});
       await tx.category.deleteMany({});
 
-      // 6. Delete Cashier Users (Preserve Administrator Account)
-      await tx.user.deleteMany({
-        where: { role: { not: "ADMIN" } },
-      });
+      // 6. Cashier users (administrator accounts are preserved)
+      await tx.user.deleteMany({ where: { role: { not: "ADMIN" } } });
 
       return {
         success: true,
-        message: "Database wiped and reset successfully. Admin user and units preserved.",
+        message: "Database wiped and reset successfully. Admin users, units and expense categories preserved.",
         timestamp: new Date().toISOString(),
       };
     },
-    {
-      maxWait: 20000, // Wait up to 20s to acquire connection from pooler
-      timeout: 60000, // Allow up to 60s for cloud PostgreSQL operations
-    }
+    { maxWait: 20000, timeout: 60000 }
   );
+
+  await audit(null, user, "DATABASE_RESET", "System", null, { at: result.timestamp });
+  return result;
 };

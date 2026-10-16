@@ -5,27 +5,11 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard,
-  ShoppingCart,
-  Package,
-  Layers,
-  Tag,
-  Ruler,
-  TrendingDown,
-  Users,
-  Truck,
-  Receipt,
-  RotateCcw,
-  BarChart3,
-  StickyNote,
   LogOut,
   Sun,
   Moon,
-  Sparkles,
   ChevronDown,
-  Check,
   Search,
-  Building2,
   Sliders,
   Keyboard,
   ShieldCheck,
@@ -36,13 +20,9 @@ import { useSidebar } from "./sidebarContext.jsx";
 import { useAuth } from "../../context/authContext.jsx";
 import { useTheme } from "../../context/themeContext.jsx";
 import { confirmAction, showToastInfo } from "../../utils/alerts.js";
+import { visibleNavGroups } from "../../config/navigation.js";
+import { useHotkeys } from "../../hooks/useHotkeys.js";
 import gmLogo from "../../assets/GM_Logo.jpeg";
-
-const BRANCHES = [
-  { id: "main", name: "GM Fabrics Main", code: "GM-01", tag: "Primary Counter" },
-  { id: "market", name: "Cloth Market Branch", code: "GM-02", tag: "Retail Store" },
-  { id: "warehouse", name: "Central Warehouse", code: "GM-WH", tag: "Storage Hub" },
-];
 
 export const SidebarNav = () => {
   const pathname = usePathname();
@@ -50,10 +30,7 @@ export const SidebarNav = () => {
   const { theme, toggleTheme } = useTheme();
   const { open, toggleSidebar, isMobile, setOpenMobile, variant, setVariant } = useSidebar();
 
-  const [activeBranch, setActiveBranch] = useState(BRANCHES[0]);
-  const [showBranchMenu, setShowBranchMenu] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showShortcutsModal, setShowShortcutsModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const searchInputRef = useRef(null);
 
@@ -67,9 +44,6 @@ export const SidebarNav = () => {
   // Close menus on click outside
   useEffect(() => {
     const handleOutsideClick = (e) => {
-      if (!e.target.closest("#branch-dropdown") && !e.target.closest("#branch-trigger")) {
-        setShowBranchMenu(false);
-      }
       if (!e.target.closest("#user-dropdown") && !e.target.closest("#user-trigger")) {
         setShowUserMenu(false);
       }
@@ -91,104 +65,16 @@ export const SidebarNav = () => {
     }
   };
 
-  const navGroups = [
-    {
-      label: "MAIN NAVIGATION",
-      items: [
-        {
-          label: "Dashboard",
-          href: "/dashboard",
-          icon: LayoutDashboard,
-          shortcut: "Alt+D",
-        },
-        {
-          label: "POS Counter",
-          href: "/pos",
-          icon: ShoppingCart,
-          highlight: true,
-          badge: "LIVE",
-          shortcut: "F2",
-        },
-        {
-          label: "Notes & To-Do",
-          href: "/notes",
-          icon: StickyNote,
-          shortcut: "Alt+N",
-        },
-      ],
+  const navGroups = visibleNavGroups(user?.role);
+
+  // Ctrl+K / Cmd+K focuses the menu search (expanding the sidebar if needed).
+  useHotkeys({
+    "Ctrl+K": () => {
+      if (!open && !isMobile) toggleSidebar();
+      if (isMobile) setOpenMobile(true);
+      setTimeout(() => searchInputRef.current?.focus(), 150);
     },
-    {
-      label: "INVENTORY & STOCK",
-      items: [
-        {
-          label: "Products Catalog",
-          href: "/products",
-          icon: Package,
-        },
-        {
-          label: "Stock Purchases",
-          href: "/stock-entries",
-          icon: TrendingDown,
-        },
-        {
-          label: "Categories",
-          href: "/categories",
-          icon: Layers,
-        },
-        {
-          label: "Brands & Labels",
-          href: "/brands",
-          icon: Tag,
-        },
-        {
-          label: "Measurement Units",
-          href: "/units",
-          icon: Ruler,
-        },
-      ],
-    },
-    {
-      label: "FINANCE & SALES",
-      items: [
-        {
-          label: "Sales History",
-          href: "/sales",
-          icon: Receipt,
-        },
-        {
-          label: "Customers & Khata",
-          href: "/customers",
-          icon: Users,
-        },
-        {
-          label: "Suppliers",
-          href: "/suppliers",
-          icon: Truck,
-        },
-        {
-          label: "Expenses Log",
-          href: "/expenses",
-          icon: TrendingDown,
-        },
-        {
-          label: "Returns & Refunds",
-          href: "/returns",
-          icon: RotateCcw,
-        },
-      ],
-    },
-    {
-      label: "INTELLIGENCE",
-      items: [
-        {
-          label: "Reports & Analytics",
-          href: "/reports",
-          icon: BarChart3,
-          aiBadge: true,
-        },
-      ],
-    },
-  ];
+  });
 
   // Search filter
   const filteredGroups = useMemo(() => {
@@ -200,7 +86,7 @@ export const SidebarNav = () => {
         items: g.items.filter((item) => item.label.toLowerCase().includes(q)),
       }))
       .filter((g) => g.items.length > 0);
-  }, [searchQuery]);
+  }, [searchQuery, navGroups]);
 
   const isCompact = !open && !isMobile;
 
@@ -212,13 +98,12 @@ export const SidebarNav = () => {
             {/* 1. BRAND & STORE SWITCHER HEADER */}
             <Sidebar.Header className="relative">
               <div className="flex items-center gap-2.5 overflow-hidden w-full">
-                <div
-                  id="branch-trigger"
-                  onClick={() => setShowBranchMenu(!showBranchMenu)}
-                  className={`flex items-center gap-2.5 p-1 rounded-xl cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex-1 overflow-hidden select-none ${
+                <Link
+                  href="/dashboard"
+                  className={`flex items-center gap-2.5 p-1 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex-1 overflow-hidden select-none ${
                     isCompact ? "justify-center" : ""
                   }`}
-                  title={isCompact ? `${activeBranch.name} (${activeBranch.code})` : undefined}
+                  title={isCompact ? "GM Fabrics" : undefined}
                 >
                   <div className="relative w-9 h-9 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700 bg-white shrink-0 shadow-xs flex items-center justify-center">
                     <Image
@@ -239,59 +124,17 @@ export const SidebarNav = () => {
                         </span>
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
                       </div>
-                      <p className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium truncate flex items-center gap-1">
-                        <span>{activeBranch.name}</span>
-                        <ChevronDown className="w-3 h-3 shrink-0 ml-auto opacity-70" />
+                      <p className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium truncate">
+                        POS & Inventory
                       </p>
                     </div>
                   )}
-                </div>
+                </Link>
 
                 {/* Sidebar expand/collapse trigger button */}
                 <Sidebar.Trigger className="shrink-0" />
               </div>
 
-              {/* Branch Switcher Popup Dropdown */}
-              {showBranchMenu && (
-                <div
-                  id="branch-dropdown"
-                  className="absolute top-full left-2 right-2 mt-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150"
-                >
-                  <div className="px-2.5 py-1.5 border-b border-zinc-100 dark:border-zinc-800">
-                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider font-mono">
-                      Active POS Branches
-                    </p>
-                  </div>
-                  <div className="space-y-1 mt-1">
-                    {BRANCHES.map((b) => (
-                      <button
-                        key={b.id}
-                        onClick={() => {
-                          setActiveBranch(b);
-                          setShowBranchMenu(false);
-                          showToastInfo(`Switched branch to: ${b.name}`);
-                        }}
-                        className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs transition-colors text-left ${
-                          activeBranch.id === b.id
-                            ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-bold"
-                            : "hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Building2 className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                          <div className="truncate">
-                            <p className="font-semibold truncate">{b.name}</p>
-                            <p className="text-[10px] text-zinc-400">{b.tag}</p>
-                          </div>
-                        </div>
-                        {activeBranch.id === b.id && (
-                          <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </Sidebar.Header>
 
             {/* 2. SEARCH / QUICK FILTER (WHEN EXPANDED) */}
@@ -356,7 +199,7 @@ export const SidebarNav = () => {
                       <Sidebar.Menu>
                         {group.items.map((item) => {
                           const Icon = item.icon;
-                          const isActive = pathname === item.href;
+                          const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
 
                           return (
                             <Sidebar.MenuItem key={item.href}>
@@ -365,7 +208,7 @@ export const SidebarNav = () => {
                                 href={item.href}
                                 isActive={isActive}
                                 variant={item.highlight ? "highlight" : "default"}
-                                tooltip={item.label}
+                                tooltip={item.shortcut ? `${item.label}  (${item.shortcut})` : item.label}
                               >
                                 <div className="flex items-center gap-3 min-w-0">
                                   <Icon
@@ -392,14 +235,7 @@ export const SidebarNav = () => {
                                   </Sidebar.MenuBadge>
                                 )}
 
-                                {!isCompact && item.aiBadge && (
-                                  <span className="flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20 font-mono">
-                                    <Sparkles className="w-2.5 h-2.5 text-indigo-500 animate-spin" />
-                                    AI
-                                  </span>
-                                )}
-
-                                {!isCompact && item.shortcut && !item.badge && !item.aiBadge && (
+                                {!isCompact && item.shortcut && !item.badge && (
                                   <span className="text-[9px] font-mono text-zinc-400 opacity-0 group-hover/item:opacity-100 transition-opacity">
                                     {item.shortcut}
                                   </span>
@@ -441,7 +277,7 @@ export const SidebarNav = () => {
                           {user?.name || "Cashier User"}
                         </p>
                         <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono font-bold uppercase truncate">
-                          {user?.role || "ADMIN"}
+                          {user?.role || "CASHIER"}
                         </p>
                       </div>
                     )}
@@ -469,7 +305,7 @@ export const SidebarNav = () => {
                       <div className="mt-1 flex items-center gap-1.5">
                         <ShieldCheck className="w-3 h-3 text-emerald-500" />
                         <span className="text-[9px] font-mono font-bold text-emerald-600 dark:text-emerald-400 uppercase">
-                          Terminal {activeBranch.code} Active
+                          Signed in as {user?.role === "ADMIN" ? "Admin" : "Cashier"}
                         </span>
                       </div>
                     </div>
@@ -521,7 +357,7 @@ export const SidebarNav = () => {
                       <button
                         onClick={() => {
                           setShowUserMenu(false);
-                          setShowShortcutsModal(true);
+                          window.__gmOpenShortcuts?.();
                         }}
                         className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
                       >
@@ -529,7 +365,7 @@ export const SidebarNav = () => {
                           <Keyboard className="w-4 h-4 text-zinc-400" />
                           <span>POS Shortcuts</span>
                         </span>
-                        <span className="text-[10px] font-mono text-zinc-400">Ctrl+B</span>
+                        <span className="text-[10px] font-mono text-zinc-400">Shift+?</span>
                       </button>
                     </div>
 
@@ -554,74 +390,6 @@ export const SidebarNav = () => {
         </Sidebar.Aside>
       </Sidebar.Root>
 
-      {/* POS Shortcuts Modal */}
-      {showShortcutsModal && (
-        <div
-          onClick={() => setShowShortcutsModal(false)}
-          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
-                  <Keyboard className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-sm text-zinc-900 dark:text-zinc-100">
-                    Keyboard Shortcuts
-                  </h3>
-                  <p className="text-[11px] text-zinc-400">Boost your GM Fabrics cashier speed</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowShortcutsModal(false)}
-                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-2 text-xs divide-y divide-zinc-100 dark:divide-zinc-800">
-              <div className="flex items-center justify-between py-2">
-                <span className="text-zinc-600 dark:text-zinc-400">Toggle Sidebar (Icon / Full)</span>
-                <kbd className="px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-800 font-mono font-bold text-zinc-700 dark:text-zinc-300">
-                  Ctrl + B
-                </kbd>
-              </div>
-              <div className="flex items-center justify-between py-2">
-                <span className="text-zinc-600 dark:text-zinc-400">Open POS Cashier Counter</span>
-                <kbd className="px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-800 font-mono font-bold text-zinc-700 dark:text-zinc-300">
-                  F2
-                </kbd>
-              </div>
-              <div className="flex items-center justify-between py-2">
-                <span className="text-zinc-600 dark:text-zinc-400">Quick Menu Search</span>
-                <kbd className="px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-800 font-mono font-bold text-zinc-700 dark:text-zinc-300">
-                  ⌘K / Ctrl+K
-                </kbd>
-              </div>
-              <div className="flex items-center justify-between py-2">
-                <span className="text-zinc-600 dark:text-zinc-400">Close Modals / Overlays</span>
-                <kbd className="px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-800 font-mono font-bold text-zinc-700 dark:text-zinc-300">
-                  Esc
-                </kbd>
-              </div>
-            </div>
-
-            <div className="pt-2 text-right">
-              <button
-                onClick={() => setShowShortcutsModal(false)}
-                className="px-4 py-2 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 rounded-xl text-xs font-bold hover:opacity-90"
-              >
-                Got it
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 };

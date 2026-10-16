@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from "react";
 import {
   Search,
   Calendar,
@@ -20,6 +20,19 @@ import { Button } from "./button.jsx";
 import { Modal } from "./modal.jsx";
 import { Loader } from "./loader.jsx";
 
+const toDateKey = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+// Converts the date filter dropdown into from/to (YYYY-MM-DD) for API queries.
+const rangeToDates = (range, startDate, endDate) => {
+  const now = new Date();
+  if (range === "today") return { from: toDateKey(now), to: toDateKey(now) };
+  if (range === "7days") return { from: toDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6)), to: toDateKey(now) };
+  if (range === "this_month") return { from: toDateKey(new Date(now.getFullYear(), now.getMonth(), 1)), to: toDateKey(now) };
+  if (range === "custom" && startDate && endDate) return { from: startDate, to: endDate };
+  return { from: undefined, to: undefined };
+};
+
 export const DataTable = ({
   columns = [],
   data = [],
@@ -34,6 +47,12 @@ export const DataTable = ({
   defaultPageSize = 10,
   emptyMessage = "No matching records found.",
   loading = false,
+  // Server mode: filtering, sorting and paging happen in the API. The table reports
+  // its query through onQueryChange and renders `data` (one page) with `totalCount`.
+  serverMode = false,
+  totalCount = 0,
+  onQueryChange = null,
+  rowClassName = null,
 }) => {
   // State
   const [searchTerm, setSearchTerm] = useState("");
@@ -56,8 +75,36 @@ export const DataTable = ({
     setSortConfig({ key, direction });
   };
 
+  // Server mode: debounce search and report the query to the parent.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    if (!serverMode) return;
+    const t = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 350);
+    return () => clearTimeout(t);
+  }, [searchTerm, serverMode]);
+
+  const onQueryChangeRef = useRef(onQueryChange);
+  useLayoutEffect(() => {
+    onQueryChangeRef.current = onQueryChange;
+  });
+
+  useEffect(() => {
+    if (!serverMode || !onQueryChangeRef.current) return;
+    const { from, to } = rangeToDates(dateRange, startDate, endDate);
+    onQueryChangeRef.current({
+      page: currentPage,
+      pageSize,
+      search: debouncedSearch || undefined,
+      from,
+      to,
+      sortBy: sortConfig.key || undefined,
+      sortDir: sortConfig.key ? sortConfig.direction : undefined,
+    });
+  }, [serverMode, currentPage, pageSize, debouncedSearch, dateRange, startDate, endDate, sortConfig]);
+
   // Filter Data (Search + Date Range)
   const filteredData = useMemo(() => {
+    if (serverMode) return Array.isArray(data) ? data : [];
     let result = Array.isArray(data) ? [...data] : [];
 
     // 1. Date Range Filtering
@@ -133,12 +180,13 @@ export const DataTable = ({
     }
 
     return result;
-  }, [data, searchTerm, dateRange, startDate, endDate, sortConfig, searchKeys, dateKey, enableDateFilter]);
+  }, [data, searchTerm, dateRange, startDate, endDate, sortConfig, searchKeys, dateKey, enableDateFilter, serverMode]);
 
   // Pagination Logic
-  const totalPages = Math.max(1, Math.ceil(filteredData.length / pageSize));
+  const totalRows = serverMode ? totalCount : filteredData.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
   const startIndex = (currentPage - 1) * pageSize;
-  const paginatedData = filteredData.slice(startIndex, startIndex + pageSize);
+  const paginatedData = serverMode ? filteredData : filteredData.slice(startIndex, startIndex + pageSize);
 
   // Handle Checkbox Selection
   const isAllSelected = paginatedData.length > 0 && paginatedData.every((row) => selectedIds.has(row[keyField]));
@@ -187,8 +235,9 @@ export const DataTable = ({
     const rows = filteredData.map((row) =>
       exportCols
         .map((col) => {
-          let val = row[col.key];
+          let val = col.exportValue ? col.exportValue(row) : row[col.key];
           if (val === null || val === undefined) val = "";
+          if (typeof val === "object") val = val.name ?? JSON.stringify(val);
           const str = String(val).replace(/"/g, '""');
           return `"${str}"`;
         })
@@ -216,7 +265,7 @@ export const DataTable = ({
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
             <input
               type="text"
-              placeholder="Search records..."
+              placeholder={serverMode ? "Search (server)..." : "Search records..."}
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
@@ -376,7 +425,7 @@ export const DataTable = ({
                     key={idVal || rowIdx}
                     className={`transition-colors hover:bg-zinc-50/80 dark:hover:bg-zinc-900/50 ${
                       isSelected ? "bg-zinc-100/70 dark:bg-zinc-900/90" : ""
-                    }`}
+                    } ${rowClassName ? rowClassName(row) || "" : ""}`}
                   >
                     {enableSelection && (
                       <td className="p-3 text-center">
@@ -423,11 +472,11 @@ export const DataTable = ({
 
         <div className="flex items-center gap-4">
           <span>
-            Showing <strong className="text-zinc-900 dark:text-zinc-100">{filteredData.length > 0 ? startIndex + 1 : 0}</strong> to{" "}
+            Showing <strong className="text-zinc-900 dark:text-zinc-100">{totalRows > 0 ? startIndex + 1 : 0}</strong> to{" "}
             <strong className="text-zinc-900 dark:text-zinc-100">
-              {Math.min(startIndex + pageSize, filteredData.length)}
+              {Math.min(startIndex + pageSize, totalRows)}
             </strong>{" "}
-            of <strong className="text-zinc-900 dark:text-zinc-100">{filteredData.length}</strong> entries
+            of <strong className="text-zinc-900 dark:text-zinc-100">{totalRows}</strong> entries
           </span>
 
           {/* Page buttons */}

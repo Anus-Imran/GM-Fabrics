@@ -28,10 +28,10 @@ export const ProductGrid = ({ products = [], categories = [], selectedCategory, 
       <div className="flex items-center gap-2 overflow-x-auto pb-3 mb-4 no-scrollbar">
         <button
           onClick={() => setSelectedCategory(null)}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition-colors ${
+          className={`px-4 py-2 text-[13px] font-semibold shrink-0 border transition-colors ${
             selectedCategory === null
-              ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-              : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300"
+              ? "bg-emerald-600 border-emerald-600 text-white"
+              : "bg-white border-zinc-300 text-zinc-700 hover:border-zinc-500 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-200 dark:hover:border-zinc-400"
           }`}
         >
           All Categories
@@ -41,10 +41,10 @@ export const ProductGrid = ({ products = [], categories = [], selectedCategory, 
           <button
             key={cat.id}
             onClick={() => setSelectedCategory(cat.id)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition-colors ${
+            className={`px-4 py-2 text-[13px] font-semibold shrink-0 border transition-colors ${
               selectedCategory === cat.id
-                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300"
+                ? "bg-emerald-600 border-emerald-600 text-white"
+                : "bg-white border-zinc-300 text-zinc-700 hover:border-zinc-500 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-200 dark:hover:border-zinc-400"
             }`}
           >
             {cat.name}
@@ -53,7 +53,7 @@ export const ProductGrid = ({ products = [], categories = [], selectedCategory, 
       </div>
 
       {/* Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto pr-1 pb-4 content-start">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3 overflow-y-auto pr-1 pb-20 lg:pb-4 content-start">
         {products.length === 0 ? (
           <div className="col-span-full py-16 text-center text-zinc-400 text-xs">No fabric products found</div>
         ) : (

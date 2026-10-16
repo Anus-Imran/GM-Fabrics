@@ -74,7 +74,8 @@ export default function PosPage() {
 
   const filteredProducts = useMemo(
     () =>
-      products.filter((p) => {
+      products
+        .filter((p) => {
         if (selectedCategory && p.categoryId !== selectedCategory) return false;
         if (!debouncedSearch) return true;
         return (
@@ -82,7 +83,8 @@ export default function PosPage() {
           (p.barcode && p.barcode.toLowerCase().includes(debouncedSearch)) ||
           (p.sku && p.sku.toLowerCase().includes(debouncedSearch))
         );
-      }),
+        })
+        .sort((a, b) => (a.stockQuantity > 0 ? 0 : 1) - (b.stockQuantity > 0 ? 0 : 1)),
     [products, selectedCategory, debouncedSearch]
   );
 

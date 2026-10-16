@@ -201,7 +201,7 @@ export default function DashboardPage() {
             </div>
 
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-              {getGreetingTime()}, {user?.name || "Shop Admin"}
+              {getGreetingTime()}, Umar &amp; Hassan
             </h1>
 
             <p className="text-xs sm:text-sm text-zinc-400 leading-relaxed">

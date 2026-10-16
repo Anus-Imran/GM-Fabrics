@@ -210,20 +210,20 @@ export const SidebarNav = () => {
                                 variant={item.highlight ? "highlight" : "default"}
                                 tooltip={item.shortcut ? `${item.label}  (${item.shortcut})` : item.label}
                               >
-                                <div className="flex items-center gap-3 min-w-0">
+                                <div className="flex items-center gap-3.5 min-w-0">
                                   <Icon
-                                    className={`w-4 h-4 shrink-0 transition-transform group-hover/item:scale-110 ${
+                                    className={`w-[18px] h-[18px] shrink-0 ${
                                       item.highlight && isActive
                                         ? "text-white"
                                         : item.highlight
                                         ? "text-emerald-600 dark:text-emerald-400"
                                         : isActive
-                                        ? "text-white dark:text-zinc-900"
+                                        ? "text-emerald-400"
                                         : "text-zinc-500 dark:text-zinc-400 group-hover/item:text-zinc-900 dark:group-hover/item:text-zinc-100"
                                     }`}
                                   />
                                   {!isCompact && (
-                                    <span className="truncate tracking-tight font-medium">
+                                    <span className="truncate">
                                       {item.label}
                                     </span>
                                   )}
@@ -236,7 +236,7 @@ export const SidebarNav = () => {
                                 )}
 
                                 {!isCompact && item.shortcut && !item.badge && (
-                                  <span className="text-[9px] font-mono text-zinc-400 opacity-0 group-hover/item:opacity-100 transition-opacity">
+                                  <span className="text-[10px] font-mono text-zinc-400 opacity-0 group-hover/item:opacity-100 transition-opacity">
                                     {item.shortcut}
                                   </span>
                                 )}

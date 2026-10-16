@@ -15,6 +15,25 @@
   font-family: 'Poppins', sans-serif !important;
 }
 
+/* Design rule: square corners everywhere — buttons, inputs, cards, menus, popovers,
+   and third-party dialogs/toasts (SweetAlert, react-toastify). */
+@theme {
+  --radius-xs: 0;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-2xl: 0;
+  --radius-3xl: 0;
+  --radius-4xl: 0;
+}
+
+*,
+*::before,
+*::after {
+  border-radius: 0 !important;
+}
+
 *:focus, *:focus-visible, *:focus-within {
   outline: none !important;
   box-shadow: none !important;

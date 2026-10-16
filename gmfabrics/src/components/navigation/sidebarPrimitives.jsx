@@ -55,7 +55,7 @@ export const SidebarRoot = ({
   const { open, openMobile, isMobile, variant, collapsible } = useSidebar();
 
   // Desktop width computation
-  let desktopWidth = "w-68"; // 17rem (272px)
+  let desktopWidth = "w-72"; // 18rem (288px)
   if (collapsible === "icon" && !open) {
     desktopWidth = "w-20"; // 5rem (80px)
   } else if (collapsible === "offcanvas" && !open) {
@@ -121,7 +121,7 @@ export const SidebarHeader = ({ children, className = "" }) => {
 export const SidebarContent = ({ children, className = "" }) => {
   return (
     <div
-      className={`flex-1 overflow-y-auto px-2.5 py-3 space-y-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${className}`}
+      className={`flex-1 overflow-y-auto px-3 py-4 space-y-6 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${className}`}
     >
       {children}
     </div>
@@ -132,7 +132,7 @@ export const SidebarContent = ({ children, className = "" }) => {
  * Sidebar.Group: Logical group of navigation items
  */
 export const SidebarGroup = ({ children, className = "" }) => {
-  return <div className={`space-y-1 ${className}`}>{children}</div>;
+  return <div className={`space-y-2 ${className}`}>{children}</div>;
 };
 
 /**
@@ -142,12 +142,12 @@ export const SidebarGroupLabel = ({ children, className = "" }) => {
   const { open, isMobile } = useSidebar();
 
   if (!open && !isMobile) {
-    return <div className="h-2 w-full" />;
+    return <div className="mx-3 border-t border-zinc-200 dark:border-zinc-800" />;
   }
 
   return (
     <div
-      className={`px-3 py-1.5 text-[10px] font-extrabold tracking-wider uppercase text-zinc-400 dark:text-zinc-500 font-mono flex items-center justify-between select-none ${className}`}
+      className={`px-3 pb-1 text-[11px] font-bold tracking-[0.14em] uppercase text-zinc-500 dark:text-zinc-400 flex items-center gap-2 select-none after:content-[''] after:flex-1 after:h-px after:bg-zinc-200 dark:after:bg-zinc-800 ${className}`}
     >
       <span>{children}</span>
     </div>
@@ -159,7 +159,7 @@ export const SidebarGroupContent = ({ children, className = "" }) => {
 };
 
 export const SidebarMenu = ({ children, className = "" }) => {
-  return <ul className={`space-y-1 list-none p-0 m-0 ${className}`}>{children}</ul>;
+  return <ul className={`space-y-1.5 list-none p-0 m-0 ${className}`}>{children}</ul>;
 };
 
 /**
@@ -220,12 +220,12 @@ export const SidebarMenuButton = React.forwardRef(
     let baseTheme = "";
     if (variant === "highlight" || props.highlight) {
       baseTheme = isActive
-        ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold shadow-md shadow-emerald-600/25"
-        : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 font-bold";
+        ? "bg-emerald-600 text-white font-semibold border-l-4 border-emerald-300"
+        : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-l-4 border-emerald-500 hover:bg-emerald-500/20 font-semibold";
     } else {
       baseTheme = isActive
-        ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-bold shadow-xs"
-        : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 font-medium";
+        ? "bg-zinc-900 text-white dark:bg-zinc-800 dark:text-white font-semibold border-l-4 border-emerald-500"
+        : "text-zinc-700 dark:text-zinc-300 border-l-4 border-transparent hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:border-zinc-300 dark:hover:border-zinc-600 font-medium";
     }
 
     return (
@@ -236,8 +236,8 @@ export const SidebarMenuButton = React.forwardRef(
           data-active={isActive ? "true" : undefined}
           title={isCompact && tooltip ? tooltip : undefined}
           className={`w-full flex items-center ${
-            isCompact ? "justify-center p-2.5" : "justify-between px-3 py-2.5"
-          } rounded-xl text-xs transition-all duration-200 cursor-pointer outline-hidden ${baseTheme} ${className}`}
+            isCompact ? "justify-center p-3" : "justify-between pl-3 pr-3 py-2.5 min-h-[42px]"
+          } text-[13px] leading-5 transition-colors duration-200 cursor-pointer outline-hidden ${baseTheme} ${className}`}
           {...props}
         >
           {children}

@@ -25,8 +25,8 @@ export const ProductSearch = forwardRef(({ searchTerm, setSearchTerm, onBarcodeS
         onKeyDown={handleKeyDown}
         autoComplete="off"
         aria-keyshortcuts="F3"
-        placeholder="Search fabric name, barcode, or SKU... (scan + Enter adds to cart)"
-        className="w-full pl-10 pr-24 py-2.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100 shadow-xs transition-colors"
+        placeholder="Search name, barcode or SKU — scan & press Enter"
+        className="w-full pl-10 pr-24 py-3 text-sm bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100 shadow-xs transition-colors"
       />
       <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
         {searchTerm ? (

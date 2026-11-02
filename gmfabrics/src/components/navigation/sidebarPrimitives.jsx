@@ -83,7 +83,7 @@ export const SidebarRoot = ({
       data-variant={variant}
       className={`shrink-0 z-30 transition-all duration-300 ease-in-out select-none ${
         isMobile
-          ? `fixed inset-y-0 ${side === "left" ? "left-0" : "right-0"} w-72 z-50 shadow-2xl ${
+          ? `fixed inset-y-0 ${side === "left" ? "left-0" : "right-0"} w-72 z-50 shadow-2xl bg-white dark:bg-zinc-900 ${
               openMobile ? "translate-x-0" : side === "left" ? "-translate-x-full" : "translate-x-full"
             }`
           : `${desktopWidth} ${variantStyles}`
@@ -108,7 +108,7 @@ export const SidebarPanel = ({ children, className = "" }) => (
 export const SidebarHeader = ({ children, className = "" }) => {
   return (
     <div
-      className={`p-3 border-b border-zinc-100 dark:border-zinc-800/70 shrink-0 bg-white/50 dark:bg-zinc-900/50 backdrop-blur-xs flex items-center justify-between gap-2 ${className}`}
+      className={`p-3 border-b border-zinc-100 dark:border-zinc-800/70 shrink-0 flex items-center justify-between gap-2 ${className}`}
     >
       {children}
     </div>
@@ -363,7 +363,7 @@ export const SidebarMenuSubButton = ({
 export const SidebarFooter = ({ children, className = "" }) => {
   return (
     <div
-      className={`p-3 border-t border-zinc-100 dark:border-zinc-800/70 shrink-0 bg-white/50 dark:bg-zinc-900/50 backdrop-blur-xs flex flex-col gap-2 ${className}`}
+      className={`p-3 border-t border-zinc-100 dark:border-zinc-800/70 shrink-0 flex flex-col gap-2 ${className}`}
     >
       {children}
     </div>

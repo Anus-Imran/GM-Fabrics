@@ -11,9 +11,14 @@ const todayKey = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-export const ExpenseModal = ({ isOpen, onClose, onSubmit, categories = [] }) => {
+const ADD_NEW = "__add_new__";
+
+export const ExpenseModal = ({ isOpen, onClose, onSubmit, categories = [], onAddCategory }) => {
   const [title, setTitle] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [newCategory, setNewCategory] = useState("");
+  const [savingCategory, setSavingCategory] = useState(false);
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState("");
   const [fromDrawer, setFromDrawer] = useState(false);
@@ -24,21 +29,38 @@ export const ExpenseModal = ({ isOpen, onClose, onSubmit, categories = [] }) => 
   useEffect(() => {
     if (!isOpen) return;
     setTitle("");
-    setCategoryId(categories[0]?.id || "");
+    setCategoryId("");
+    setAddingCategory(false);
     setAmount("");
     setDate(todayKey());
     setFromDrawer(false);
     setNotes("");
     setError("");
-  }, [isOpen, categories]);
+  }, [isOpen]);
+
+  const handleAddCategory = async () => {
+    const name = newCategory.trim();
+    if (!name) return;
+    setSavingCategory(true);
+    setError("");
+    try {
+      const created = await onAddCategory(name);
+      if (created?.id) setCategoryId(String(created.id));
+      setAddingCategory(false);
+    } catch (err) {
+      setError(err.message || "Failed to add category.");
+    } finally {
+      setSavingCategory(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
 
     const amt = parseFloat(amount);
-    if (!title.trim() || !categoryId || isNaN(amt) || amt <= 0) {
-      setError("Please fill in Title, Category, and an amount greater than zero.");
+    if (!title.trim() || isNaN(amt) || amt <= 0) {
+      setError("Please fill in Title and an amount greater than zero.");
       return;
     }
     if (date && date > todayKey()) {
@@ -48,7 +70,7 @@ export const ExpenseModal = ({ isOpen, onClose, onSubmit, categories = [] }) => 
 
     setLoading(true);
     try {
-      await onSubmit({ title: title.trim(), categoryId, amount: amt, date: date || null, fromDrawer, notes: notes.trim() || null });
+      await onSubmit({ title: title.trim(), categoryId: categoryId || null, amount: amt, date: date || null, fromDrawer, notes: notes.trim() || null });
       onClose();
     } catch (err) {
       setError(err.message || "Failed to record expense.");
@@ -73,20 +95,46 @@ export const ExpenseModal = ({ isOpen, onClose, onSubmit, categories = [] }) => 
         />
 
         <div>
-          <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">Category *</label>
-          <select
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
-            required
-            className="w-full text-xs p-2.5 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg"
-          >
-            <option value="">Select Expense Category</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">Category (Optional)</label>
+          {addingCategory ? (
+            <div className="flex gap-2">
+              <input
+                value={newCategory}
+                maxLength={100}
+                onChange={(e) => setNewCategory(e.target.value)}
+                placeholder="New category name"
+                autoFocus
+                className="flex-1 min-w-0 text-xs p-2.5 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+              />
+              <Button type="button" onClick={handleAddCategory} loading={savingCategory} loadingText="Adding...">
+                Add
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setAddingCategory(false)}>
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <select
+              value={categoryId}
+              onChange={(e) => {
+                if (e.target.value === ADD_NEW) {
+                  setNewCategory("");
+                  setAddingCategory(true);
+                } else {
+                  setCategoryId(e.target.value);
+                }
+              }}
+              className="w-full text-xs p-2.5 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+            >
+              <option value="">General (no category)</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+              {onAddCategory && <option value={ADD_NEW}>+ Add new category…</option>}
+            </select>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3">

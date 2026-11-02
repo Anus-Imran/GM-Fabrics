@@ -74,14 +74,28 @@ const parseExpenseDate = (value) => {
   return date;
 };
 
+const DEFAULT_EXPENSE_CATEGORY = "General";
+
+// Category is optional on the form; the column is required, so fall back to a shared "General" category.
+const resolveCategoryId = async (categoryId) => {
+  if (categoryId) {
+    const category = await prisma.expenseCategory.findUnique({ where: { id: categoryId } });
+    if (!category) throw badRequest("Selected expense category was not found");
+    return category.id;
+  }
+  const fallback = await prisma.expenseCategory.findFirst({
+    where: { name: { equals: DEFAULT_EXPENSE_CATEGORY, mode: "insensitive" } },
+  });
+  return (fallback || (await prisma.expenseCategory.create({ data: { name: DEFAULT_EXPENSE_CATEGORY } }))).id;
+};
+
 export const createExpense = async (user, data) => {
-  const category = await prisma.expenseCategory.findUnique({ where: { id: data.categoryId } });
-  if (!category) throw badRequest("Selected expense category was not found");
+  const categoryId = await resolveCategoryId(data.categoryId);
 
   return prisma.expense.create({
     data: {
       title: data.title,
-      categoryId: data.categoryId,
+      categoryId,
       amount: round2(data.amount),
       date: parseExpenseDate(data.date),
       fromDrawer: !!data.fromDrawer,
@@ -98,7 +112,7 @@ export const updateExpense = async (user, id, data) => {
 
   const updateData = {};
   if (data.title !== undefined) updateData.title = data.title;
-  if (data.categoryId !== undefined) updateData.categoryId = data.categoryId;
+  if (data.categoryId !== undefined) updateData.categoryId = await resolveCategoryId(data.categoryId);
   if (data.amount !== undefined) updateData.amount = round2(data.amount);
   if (data.date !== undefined) updateData.date = parseExpenseDate(data.date);
   if (data.fromDrawer !== undefined) updateData.fromDrawer = data.fromDrawer;

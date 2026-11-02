@@ -25,6 +25,13 @@ export default function ExpensesPage() {
     api.get("/expense-categories").then((r) => setCategories(r.data || [])).catch(() => {});
   }, []);
 
+  const handleAddCategory = async (name) => {
+    const res = await api.post("/expense-categories", { name });
+    const created = res.data || res;
+    setCategories((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+    return created;
+  };
+
   useHotkeys({ "Alt+Shift+N": () => setShowModal(true) }, { enabled: !showModal });
 
   // Re-thrown so the modal keeps the form and shows the error.
@@ -83,7 +90,7 @@ export default function ExpensesPage() {
         <ExpenseTable list={list} onDelete={handleDeleteExpense} isAdmin={isAdmin} />
       </Card>
 
-      <ExpenseModal isOpen={showModal} onClose={() => setShowModal(false)} onSubmit={handleCreateExpense} categories={categories} />
+      <ExpenseModal isOpen={showModal} onClose={() => setShowModal(false)} onSubmit={handleCreateExpense} categories={categories} onAddCategory={isAdmin ? handleAddCategory : undefined} />
     </div>
   );
 }

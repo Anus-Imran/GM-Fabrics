@@ -364,7 +364,7 @@ export const createReturnBody = z.object({
 
 export const expenseBody = z.object({
   title: requiredText(191, "Title"),
-  categoryId: id,
+  categoryId: optionalId.optional(),
   amount: positiveMoney("Expense amount"),
   date: optionalDate,
   fromDrawer: bool.optional(),
